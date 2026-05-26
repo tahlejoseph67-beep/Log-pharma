@@ -1,0 +1,6 @@
+{
+  "name": "LOG PHARMA",
+  "description": "Logiciel de gestion de pharmacie exhaustif pour le suivi en temps réel du stock, du personnel, des partenaires de distribution et de la clientèle, avec caisse enregistreuse intégrée.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
