@@ -212,6 +212,12 @@ export default function App() {
   const [showAddPartnerModal, setShowAddPartnerModal] = useState<boolean>(false);
   const [showAddClientModal, setShowAddClientModal] = useState<boolean>(false);
   
+  // System Reset States
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
+  const [resetType, setResetType] = useState<'empty' | 'demo'>('empty');
+  const [resetConfirmWord, setResetConfirmWord] = useState<string>('');
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string>('');
+  
   const [lastSaleReceipt, setLastSaleReceipt] = useState<Sale | null>(null);
   const [printData, setPrintData] = useState<Sale | null>(null);
   const [printWithdrawMeds, setPrintWithdrawMeds] = useState<Medicine[] | null>(null);
@@ -432,6 +438,33 @@ export default function App() {
       setCheckedWithdrawIds(prev => prev.filter(id => !medIds.includes(id)));
       playBeep();
     }
+  };
+
+  const handleSystemReset = (type: 'empty' | 'demo') => {
+    if (type === 'empty') {
+      // Vider toutes les données demandées : stocks (medicines), vente (sales), clients (clients), laboratoire (partners)
+      setMedicines([]);
+      setSales([]);
+      setClients([]);
+      setPartners([]);
+      setResetSuccessMsg("Toutes les données de stocks, de ventes, de clients et de laboratoires fournisseurs ont été entièrement vidées pour une nouvelle utilisation !");
+    } else {
+      // Réinitialiser aux données initiales de démonstration
+      setMedicines(INITIAL_MEDICINES);
+      setSales(INITIAL_SALES);
+      setClients(INITIAL_CLIENTS);
+      setPartners(INITIAL_PARTNERS);
+      setResetSuccessMsg("Le système a été réinitialisé avec succès avec les données de démonstration d'usine !");
+    }
+    // Jouer le bip de succès et réinitialiser les états
+    playBeep();
+    setShowResetConfirmModal(false);
+    setResetConfirmWord('');
+    
+    // Auto scroll or fadeout success message after 5 seconds
+    setTimeout(() => {
+      setResetSuccessMsg('');
+    }, 6000);
   };
 
   // --- SALES HISTORY FILTER MODAL ---
@@ -1065,6 +1098,23 @@ export default function App() {
         {/* --- TABS 1: DASHBOARD --- */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
+            
+            {/* Message de succès de réinitialisation */}
+            {resetSuccessMsg && (
+              <div className="bg-emerald-900/90 border border-emerald-500/30 text-emerald-100 rounded-xl p-4.5 text-xs font-bold flex items-center justify-between gap-3 animate-bounce shadow-md">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">✓</span>
+                  <span>{resetSuccessMsg}</span>
+                </div>
+                <button 
+                  onClick={() => setResetSuccessMsg('')} 
+                  className="hover:bg-emerald-800 px-2.5 py-1 rounded text-[10px] text-emerald-300 font-extrabold cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-white p-4.5 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
                 <div>
@@ -1433,6 +1483,75 @@ export default function App() {
                 </table>
               </div>
             </div>
+
+            {/* ZONE D'ADMINISTRATION SECURISEE (ADMIN ONLY) */}
+            {currentUser?.role === 'Admin' && (
+              <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-800 shadow-lg space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-100 flex items-center gap-2">
+                      <Shield size={16} className="text-emerald-500" />
+                      <span>Espace Administration & Configuration Système</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-medium">Contrôles globaux de maintenance de la base de données et de réinitialisation de l'officine.</p>
+                  </div>
+                  <div className="bg-slate-800 border border-slate-700 text-slate-300 px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold">
+                    ACCÈS : ADMINISTRATEUR PRINCIPAL
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Option 1: Vider tout pour nouvelle utilisation */}
+                  <div className="bg-slate-950 border border-red-950/40 hover:border-red-900/60 p-4.5 rounded-xl flex flex-col justify-between transition-colors">
+                    <div className="space-y-1.5">
+                      <div className="inline-block bg-red-950/40 text-red-400 border border-red-900/30 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded">
+                        Mise en Production
+                      </div>
+                      <h4 className="text-xs font-bold text-red-200">Vider complètement les données (Nouvelle Utilisation)</h4>
+                      <p className="text-[11px] text-slate-400 leading-normal">
+                        Efface intégralement tous les stocks de médicaments, l'historique de toutes les ventes et encaissements, la liste des clients et patients, ainsi que les laboratoires partenaires pour démarrer une nouvelle utilisation propre de l'officine.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playBeep();
+                        setResetType('empty');
+                        setShowResetConfirmModal(true);
+                      }}
+                      className="mt-4 bg-red-600 hover:bg-red-750 text-white font-extrabold text-[10px] uppercase tracking-wider py-2.5 rounded-lg transition-colors cursor-pointer text-center w-full"
+                    >
+                      Supprimer & Purger toutes les données
+                    </button>
+                  </div>
+
+                  {/* Option 2: Réinitialiser aux données de démonstration */}
+                  <div className="bg-slate-950 border border-emerald-950/40 hover:border-emerald-900/60 p-4.5 rounded-xl flex flex-col justify-between transition-colors">
+                    <div className="space-y-1.5">
+                      <div className="inline-block bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded">
+                        Données d'Usine
+                      </div>
+                      <h4 className="text-xs font-bold text-emerald-200">Rétablir les données de démonstration d'usine</h4>
+                      <p className="text-[11px] text-slate-400 leading-normal">
+                        Restaure l'ensemble des données de démonstration par défaut (médicaments types, ventes simulées, patients fictifs et laboratoires de test) pour continuer d'explorer ou de tester la plateforme.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playBeep();
+                        setResetType('demo');
+                        setShowResetConfirmModal(true);
+                      }}
+                      className="mt-4 bg-slate-800 hover:bg-slate-700 text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider py-2.5 rounded-lg transition-colors cursor-pointer text-center w-full"
+                    >
+                      Restaurer la démo d'origine
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -3040,6 +3159,82 @@ export default function App() {
           <div className="border-t border-slate-200 mt-12 pt-4 text-center text-[9px] text-slate-400 space-y-1 leading-normal">
             <p className="font-bold text-slate-600">LOG PHARMA • SÉCURITÉ CLINIQUE • CONFORME AUX RECOMMANDATIONS DE L'ANSM</p>
             <p>Document d'archivage réglementaire d'officine, devant être conservé durant une période légale minimale de 3 ans au registre de traçabilité des déchets de produits de santé.</p>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMATION DE REINITIALISATION DU SYSTEME */}
+      {showResetConfirmModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9999] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4 my-8">
+            <div className="flex items-center gap-3 text-red-500">
+              <div className="bg-red-500/10 p-2.5 rounded-lg">
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                  ⚠️ CONFIRMATION DE PURGE REQUISE
+                </h3>
+                <p className="text-[10px] text-slate-400">Action hautement destructrice et irréversible.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {resetType === 'empty' ? (
+                <span>
+                  Vous êtes sur le point de <strong className="text-red-400 font-extrabold">vider complètement</strong> toutes les données de stocks (produits), de ventes, de clients et de laboratoires pour une nouvelle utilisation propre.
+                </span>
+              ) : (
+                <span>
+                  Vous êtes sur le point de <strong className="text-teal-400 font-extrabold">réinitialiser toutes les données</strong> de stocks, de ventes, de clients et de laboratoires à leur état de démonstration par défaut.
+                </span>
+              )}
+            </p>
+
+            <div className="bg-slate-950 border border-slate-850 p-3 rounded-xl space-y-2 text-[11px] text-slate-400 leading-snug">
+              <p className="font-bold text-slate-300">⚠️ Conséquences de cette action :</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Suppression définitive de la liste de stock</li>
+                <li>Purge de tout l'historique de caisse et de facturation</li>
+                <li>Destruction des fiches de sécurité sociale des patients</li>
+                <li>Désactivation de toutes les relations laboratoires en cours</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Pour confirmer, veuillez saisir le mot <strong className="text-red-500 font-black">REINITIALISER</strong> ci-dessous :
+              </label>
+              <input
+                type="text"
+                value={resetConfirmWord}
+                onChange={(e) => setResetConfirmWord(e.target.value)}
+                placeholder="REINITIALISER"
+                className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-slate-100 focus:outline-none focus:border-red-500 font-mono text-center text-sm uppercase tracking-wider"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  playBeep();
+                  setShowResetConfirmModal(false);
+                  setResetConfirmWord('');
+                }}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-extrabold py-2.5 rounded-xl cursor-pointer transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={resetConfirmWord.trim().toUpperCase() !== 'REINITIALISER'}
+                onClick={() => handleSystemReset(resetType)}
+                className="flex-1 bg-red-600 hover:bg-red-750 disabled:bg-slate-800 disabled:text-slate-650 text-white text-xs font-extrabold py-2.5 rounded-xl cursor-pointer transition-colors"
+              >
+                Confirmer la Purge
+              </button>
+            </div>
           </div>
         </div>
       )}
