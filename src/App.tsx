@@ -119,6 +119,28 @@ interface Sale {
   sellerName?: string;
 }
 
+interface PharmacyInfo {
+  companyName: string;
+  pharmacyName: string;
+  address: string;
+  phone: string;
+  email: string;
+  rppsSIRET: string;
+  agreement: string;
+  ameliAgreement: string;
+}
+
+const INITIAL_PHARMACY_INFO: PharmacyInfo = {
+  companyName: "LOG PHARMA OFFICINE",
+  pharmacyName: "PHARMACIE DE LA MAIRIE",
+  address: "12 Place de la République, 75003 Paris",
+  phone: "01 42 77 56 43",
+  email: "contact@pharmaciemairie.fr",
+  rppsSIRET: "Numéro RPPS : 10065432109 • SIRET : 410 552 123 00018",
+  agreement: "Plateforme Logistique Officinale • Agrément ARS Île-de-France",
+  ameliAgreement: "Agrément CNAMPS Ameli N° 401552 - Télétransmission SESAM-Vitale directe."
+};
+
 // Initial datasets in clear French
 const INITIAL_MEDICINES: Medicine[] = [
   { id: '1', name: 'Paracétamol Biogaran 500mg', cip: '340093848206', category: 'Antalgique', buyingPrice: 0.95, sellingPrice: 2.15, quantity: 140, minAlertQty: 30, expiryDate: '2028-04-12', location: 'Rayon A-1', requiresPrescription: false },
@@ -196,12 +218,18 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_SALES;
   });
 
+  const [pharmacyInfo, setPharmacyInfo] = useState<PharmacyInfo>(() => {
+    const saved = localStorage.getItem('pharma_info');
+    return saved ? JSON.parse(saved) : INITIAL_PHARMACY_INFO;
+  });
+
   // State sync
   useEffect(() => { localStorage.setItem('pharma_medicines', JSON.stringify(medicines)); }, [medicines]);
   useEffect(() => { localStorage.setItem('pharma_employees', JSON.stringify(employees)); }, [employees]);
   useEffect(() => { localStorage.setItem('pharma_partners', JSON.stringify(partners)); }, [partners]);
   useEffect(() => { localStorage.setItem('pharma_clients', JSON.stringify(clients)); }, [clients]);
   useEffect(() => { localStorage.setItem('pharma_sales', JSON.stringify(sales)); }, [sales]);
+  useEffect(() => { localStorage.setItem('pharma_info', JSON.stringify(pharmacyInfo)); }, [pharmacyInfo]);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients'>('dashboard');
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -250,19 +278,19 @@ export default function App() {
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(15);
     doc.setTextColor(15, 23, 42); // slate-900
-    doc.text("LOG PHARMA OFFICINE", 14, 20);
+    doc.text(pharmacyInfo.companyName, 14, 20);
 
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(51, 65, 85);
-    doc.text("PHARMACIE DE LA MAIRIE", 14, 25);
+    doc.text(pharmacyInfo.pharmacyName, 14, 25);
 
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
-    doc.text("12 Place de la République, 75003 Paris", 14, 29);
-    doc.text("Tél : 01 42 77 56 43 • Email : contact@pharmaciemairie.fr", 14, 33);
-    doc.text("Plateforme Logistique Officinale • Agrément ARS Île-de-France", 14, 37);
+    doc.text(pharmacyInfo.address, 14, 29);
+    doc.text(`Tél : ${pharmacyInfo.phone} • Email : ${pharmacyInfo.email}`, 14, 33);
+    doc.text(pharmacyInfo.agreement, 14, 37);
 
     // Document type / Date / Opérateur (droite)
     doc.setFont("Helvetica", "bold");
@@ -454,6 +482,7 @@ export default function App() {
       setSales(INITIAL_SALES);
       setClients(INITIAL_CLIENTS);
       setPartners(INITIAL_PARTNERS);
+      setPharmacyInfo(INITIAL_PHARMACY_INFO);
       setResetSuccessMsg("Le système a été réinitialisé avec succès avec les données de démonstration d'usine !");
     }
     // Jouer le bip de succès et réinitialiser les états
@@ -1012,8 +1041,8 @@ export default function App() {
               +
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-wide text-emerald-300">LOG PHARMA</h1>
-              <p className="text-[10px] text-emerald-100/70 tracking-widest uppercase font-bold">Système Pro de Gestion d'Officine</p>
+              <h1 className="text-xl font-bold tracking-wide text-emerald-300 uppercase">{pharmacyInfo.companyName}</h1>
+              <p className="text-[10px] text-emerald-100/70 tracking-wider uppercase font-bold">{pharmacyInfo.pharmacyName}</p>
             </div>
           </div>
 
@@ -1546,6 +1575,114 @@ export default function App() {
                       className="mt-4 bg-slate-800 hover:bg-slate-700 text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider py-2.5 rounded-lg transition-colors cursor-pointer text-center w-full"
                     >
                       Restaurer la démo d'origine
+                    </button>
+                  </div>
+                </div>
+
+                {/* Personnalisation des informations d'officine */}
+                <div className="bg-slate-950 border border-slate-800 p-5 rounded-xl mt-4 space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-900">
+                    <span className="text-emerald-400 text-lg">⚙️</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wide">Personnalisation des Coordonnées & Factures</h4>
+                      <p className="text-[10px] text-slate-400">Modifiez les coordonnées s'affichant sur l'en-tête de l'application et sur toutes les factures / justificatifs émis.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Nom de l'Entreprise (Titre Principal)</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.companyName} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, companyName: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-bold" 
+                        placeholder="Ex: LOG PHARMA OFFICINE"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Nom de l'Officine / Établissement</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.pharmacyName} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, pharmacyName: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-bold" 
+                        placeholder="Ex: PHARMACIE DE LA MAIRIE"
+                      />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Adresse de l'Officine</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.address} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, address: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
+                        placeholder="Ex: 12 Place de la République, 75003 Paris"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Téléphone Officiel</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.phone} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, phone: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
+                        placeholder="Ex: 01 42 77 56 43"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Email Officiel</label>
+                      <input 
+                        type="email" 
+                        value={pharmacyInfo.email} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, email: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
+                        placeholder="Ex: contact@pharmaciemairie.fr"
+                      />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Identifiants Légaux (RPPS & SIRET)</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.rppsSIRET} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, rppsSIRET: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
+                        placeholder="Ex: Numéro RPPS : 10065432109 • SIRET : 410 552 123 00018"
+                      />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Agrément Régional (ex: ARS)</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.agreement} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, agreement: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
+                        placeholder="Ex: Plateforme Logistique Officinale • Agrément ARS Île-de-France"
+                      />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400">Agrément Assurance Maladie / Ameli</label>
+                      <input 
+                        type="text" 
+                        value={pharmacyInfo.ameliAgreement} 
+                        onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, ameliAgreement: e.target.value })} 
+                        className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
+                        placeholder="Ex: Agrément CNAMPS Ameli N° 401552 - Télétransmission SESAM-Vitale directe."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-[10px] text-emerald-400 font-bold bg-emerald-950/20 border border-emerald-900/30 p-2.5 rounded-lg">
+                    <span>⚡ Changements sauvegardés automatiquement dans le navigateur de ce poste</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playBeep();
+                        setPharmacyInfo(INITIAL_PHARMACY_INFO);
+                      }}
+                      className="text-rose-400 hover:text-rose-350 font-black uppercase tracking-wider text-[9px] cursor-pointer"
+                    >
+                      🔄 Réinitialiser par défaut
                     </button>
                   </div>
                 </div>
@@ -2940,19 +3077,19 @@ export default function App() {
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-xl font-bold text-emerald-800 border-2 border-emerald-800 px-1.5 rounded-lg">+</span>
-                <span className="text-base font-black text-slate-900 uppercase tracking-tight">LOG PHARMA OFFICINE</span>
+                <span className="text-base font-black text-slate-900 uppercase tracking-tight">{pharmacyInfo.companyName}</span>
               </div>
-              <p className="font-bold text-[11px] text-slate-800">PHARMACIE DE LA MAIRIE</p>
-              <p className="text-slate-600">12 Place de la République, 75003 Paris</p>
-              <p className="text-slate-600">Tél : 01 42 77 56 43 • Email : contact@pharmaciemairie.fr</p>
-              <p className="text-slate-505 font-medium mt-1">Numéro RPPS : 10065432109 • SIRET : 410 552 123 00018</p>
+              <p className="font-bold text-[11px] text-slate-800">{pharmacyInfo.pharmacyName}</p>
+              <p className="text-slate-600">{pharmacyInfo.address}</p>
+              <p className="text-slate-600">Tél : {pharmacyInfo.phone} • Email : {pharmacyInfo.email}</p>
+              <p className="text-slate-505 font-medium mt-1">{pharmacyInfo.rppsSIRET}</p>
             </div>
             <div className="text-right">
               <div className="bg-slate-900 text-white font-extrabold px-3 py-1.5 rounded uppercase tracking-wider text-[11px] mb-2 inline-block">
                 {printData.prescriptionAttached ? 'Facture subrogatoire SESAM-Vitale' : 'Facture de caisse / Justificatif'}
               </div>
               <p className="text-slate-500">Date d'édition : <strong className="text-slate-900 font-bold">{new Date(printData.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong></p>
-              <p className="text-slate-500">Référence Vente : <strong className="text-slate-900 font-mono font-bold">{printData.id}</strong></p>
+              <p className="text-slate-505">Référence Vente : <strong className="text-slate-900 font-mono font-bold">{printData.id}</strong></p>
               <p className="text-slate-505">Conseiller / Pharmacien : <strong className="text-slate-900 font-bold">{currentUser?.name || 'Collaborateur Officine'}</strong></p>
             </div>
           </div>
@@ -3059,8 +3196,8 @@ export default function App() {
 
           {/* Bas de page légal */}
           <div className="border-t border-slate-200 mt-12 pt-4 text-center text-[9px] text-slate-400 space-y-1 leading-normal">
-            <p className="font-bold text-slate-600">ID TRANSACTION UNIQUE : {printData.id} • FACTURE CERTIFIÉE STRICTEMENT CONFORME PAR LOG PHARMA</p>
-            <p>Agrément CNAMPS Ameli N° 401552 - Télétransmission SESAM-Vitale directe.</p>
+            <p className="font-bold text-slate-600">ID TRANSACTION UNIQUE : {printData.id} • FACTURE CERTIFIÉE STRICTEMENT CONFORME PAR {pharmacyInfo.companyName}</p>
+            <p>{pharmacyInfo.ameliAgreement}</p>
             <p className="leading-snug">Facture exonérée de TVA en vertu des articles 261 et suivants du CGI pour les médicaments pris en charge par l'assurance maladie. Pour toute réclamation ou question relative aux remboursements mutuelles complémentaires, veuillez vous référer à votre relevé d'Assurance Maladie sous No Ameli et joindre la présente facture de dispensation.</p>
           </div>
         </div>
@@ -3074,12 +3211,12 @@ export default function App() {
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-xl font-bold text-rose-800 border-2 border-rose-800 px-1.5 rounded-lg">⚕️</span>
-                <span className="text-base font-black text-slate-900 uppercase tracking-tight">LOG PHARMA OFFICINE</span>
+                <span className="text-base font-black text-slate-900 uppercase tracking-tight">{pharmacyInfo.companyName}</span>
               </div>
-              <p className="font-bold text-[11px] text-slate-800">PHARMACIE DE LA MAIRIE</p>
-              <p className="text-slate-600">12 Place de la République, 75003 Paris</p>
-              <p className="text-slate-600">Tél : 01 42 77 56 43 • Email : contact@pharmaciemairie.fr</p>
-              <p className="text-slate-505 font-medium mt-1">Plateforme Logistique Officinale • Agrément ARS Île-de-France</p>
+              <p className="font-bold text-[11px] text-slate-800">{pharmacyInfo.pharmacyName}</p>
+              <p className="text-slate-600">{pharmacyInfo.address}</p>
+              <p className="text-slate-600">Tél : {pharmacyInfo.phone} • Email : {pharmacyInfo.email}</p>
+              <p className="text-slate-505 font-medium mt-1">{pharmacyInfo.agreement}</p>
             </div>
             <div className="text-right">
               <div className="bg-rose-900 text-white font-extrabold px-3 py-1.5 rounded uppercase tracking-wider text-[11px] mb-2 inline-block">
