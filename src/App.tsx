@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   Building2, 
   Users, 
@@ -226,9 +228,192 @@ export default function App() {
   const handlePrintWithdrawList = (meds: Medicine[]) => {
     setPrintData(null); // Ensure we are not printing both
     setPrintWithdrawMeds(meds);
-    setTimeout(() => {
-      window.print();
-    }, 200);
+
+    // Initialiser le document PDF
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    // En-tête de page rouge pour retrait clinique
+    doc.setFillColor(153, 27, 27); // Rose 800
+    doc.rect(0, 0, 210, 8, 'F');
+
+    // Branding / Info (gauche)
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.text("LOG PHARMA OFFICINE", 14, 20);
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(51, 65, 85);
+    doc.text("PHARMACIE DE LA MAIRIE", 14, 25);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("12 Place de la République, 75003 Paris", 14, 29);
+    doc.text("Tél : 01 42 77 56 43 • Email : contact@pharmaciemairie.fr", 14, 33);
+    doc.text("Plateforme Logistique Officinale • Agrément ARS Île-de-France", 14, 37);
+
+    // Document type / Date / Opérateur (droite)
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(153, 27, 27); // Rose 800
+    doc.text("ORDRE DE RETRAIT CLINIQUE", 196, 20, { align: 'right' });
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("(Risque Péremption - Seuil 30 Jours)", 196, 24, { align: 'right' });
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    const dateStr = new Date().toLocaleDateString('fr-FR', { 
+      day: '2-digit', month: '2-digit', year: 'numeric', 
+      hour: '2-digit', minute: '2-digit' 
+    });
+    doc.text(`Généré le : ${dateStr}`, 196, 30, { align: 'right' });
+    doc.text(`Opérateur : ${currentUser?.name || 'Pharmacien de Stock'}`, 196, 34, { align: 'right' });
+    doc.text(`Rôle : ${currentUser?.role || 'Collaborateur Officine'}`, 196, 38, { align: 'right' });
+
+    // Ligne décorative de séparation
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, 42, 196, 42);
+
+    // Bannière d'alerte / certification
+    doc.setFillColor(254, 242, 242); // Rose 50 background
+    doc.setDrawColor(254, 205, 205); // Rose 200 border
+    doc.rect(14, 46, 182, 21, 'F');
+    doc.rect(14, 46, 182, 21, 'S');
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(153, 27, 27); // Rose 800
+    doc.text("⚠️ CERTIFICATION DE CONFORMITÉ ET D'ÉVICTION SANITAIRE :", 18, 51);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(127, 29, 29); // Rose 900
+    const warningText = "Conformément aux directives de l'Agence Nationale de Sécurité du Médicament (ANSM) et du Code de la santé publique, les références ci-dessous ont franchi le seuil de péremption d'un mois (<= 30 jours). Elles doivent être immédiatement écartées de la dispensation, signalées dans le système et triées dans le bac Cyclamed.";
+    const splitWarning = doc.splitTextToSize(warningText, 174);
+    doc.text(splitWarning, 18, 55);
+
+    // Lignes de tableau
+    const tableRows = meds.map((med, idx) => {
+      const d = new Date(med.expiryDate);
+      const today = new Date('2026-05-26');
+      const diff = d.getTime() - today.getTime();
+      const diffDays = Math.ceil(diff / (24 * 60 * 60 * 1000));
+      const isExpired = diffDays <= 0;
+      const statusText = isExpired ? `Périmé (${Math.abs(diffDays)}j)` : `Sous ${diffDays} j`;
+      
+      return [
+        (idx + 1).toString(),
+        med.name,
+        med.cip,
+        med.location || 'Inconnu',
+        d.toLocaleDateString('fr-FR'),
+        `${med.quantity} bte(s)`,
+        statusText,
+        '[  ]'
+      ];
+    });
+
+    // Générer le tableau avec jspdf-autotable
+    autoTable(doc, {
+      startY: 71,
+      head: [['N°', 'Désignation Médicament', 'CIP', 'Rayon', 'Date Expir.', 'Stock', 'Échéance', 'Check']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 23, 42], // slate-900
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { fontStyle: 'bold', fontSize: 7.5 },
+        2: { cellWidth: 26, halign: 'center', fontStyle: 'normal' },
+        3: { cellWidth: 28, fontSize: 7.5, halign: 'center' },
+        4: { cellWidth: 22, halign: 'center' },
+        5: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
+        6: { cellWidth: 24, halign: 'center', fontStyle: 'bold' },
+        7: { cellWidth: 14, halign: 'center' }
+      },
+      styles: {
+        fontSize: 7.5,
+        cellPadding: 1.8,
+        valign: 'middle'
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 6) {
+          const val = data.cell.text[0];
+          if (val.includes('Périmé')) {
+            data.cell.styles.textColor = [153, 27, 27]; // Red
+          } else {
+            data.cell.styles.textColor = [180, 83, 9]; // Amber
+          }
+        }
+      }
+    });
+
+    // Position signatures
+    const finalY = (doc as any).lastAutoTable.finalY || 160;
+    let sigY = finalY + 12;
+    if (sigY > 240) {
+      doc.addPage();
+      sigY = 20;
+    }
+
+    // Signatures
+    doc.setDrawColor(203, 213, 225);
+    doc.line(14, sigY, 100, sigY);
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Visa du Pharmacien d'Officine Responsable", 14, sigY + 5);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Nom : ___________________________", 14, sigY + 9);
+    doc.text("Signature :", 14, sigY + 13);
+
+    doc.line(114, sigY, 196, sigY);
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Attestation de mise au tri Cyclamed", 114, sigY + 5);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    const totalBoxStr = meds.reduce((sum, m) => sum + m.quantity, 0).toString();
+    doc.text(`Nombre total de boîtes écartées de la vente : ${totalBoxStr}`, 114, sigY + 9);
+    doc.text("Cachet de tri :", 114, sigY + 13);
+
+    // Pied de page
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, 280, 196, 280);
+
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text("LOG PHARMA • SÉCURITÉ CLINIQUE • CONFORME AUX RECOMMANDATIONS DE L'ANSM", 105, 284, { align: 'center' });
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(6);
+      doc.text("Document d'archivage réglementaire d'officine, conservé 3 ans minimum au registre de traçabilité des déchets de produits de santé.", 105, 287, { align: 'center' });
+      doc.text(`Page ${i} sur ${pageCount}`, 105, 291, { align: 'center' });
+    }
+
+    // Téléchargement automatique du fichier PDF
+    doc.save(`ordre-retrait-clinique-${new Date().toISOString().slice(0,10)}.pdf`);
   };
 
   const handleWithdrawItems = (medIds: string[]) => {
@@ -324,8 +509,8 @@ export default function App() {
         shift: 'Général',
         status: 'Présent',
         badgeId: 'SUPER-ADMIN',
-        username: 'admin',
-        password: 'pharma'
+        username: 'AdminGnammi',
+        password: 'Gnammi1212@'
       });
     }
   };
@@ -603,7 +788,7 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (adminUsername === 'admin' && adminPassword === 'pharma') {
+    if (adminUsername.trim().toLowerCase() === 'admingnammi' && adminPassword === 'Gnammi1212@') {
       setAdminAuth(true);
       setAdminLoginError('');
       setShowAdminLoginModal(false);
@@ -611,7 +796,7 @@ export default function App() {
       setAdminPassword('');
       playBeep();
     } else {
-      setAdminLoginError('Identifiants incorrects. Saisissez "admin" et "pharma".');
+      setAdminLoginError('Identifiants incorrects.');
     }
   };
 
@@ -698,7 +883,7 @@ export default function App() {
                 return;
               }
 
-              if (u === 'admin' && p === 'pharma') {
+              if (u === 'admingnammi' && p === 'Gnammi1212@') {
                 setCurrentUser({
                   id: 'admin-master',
                   name: "Directeur de l'Officine",
@@ -708,8 +893,8 @@ export default function App() {
                   shift: 'Général',
                   status: 'Présent',
                   badgeId: 'SUPER-ADMIN',
-                  username: 'admin',
-                  password: 'pharma'
+                  username: 'AdminGnammi',
+                  password: 'Gnammi1212@'
                 });
                 playBeep();
                 return;
@@ -748,7 +933,7 @@ export default function App() {
                   value={loginUsername}
                   onChange={(e) => setLoginUsername(e.target.value)}
                   className="w-full bg-slate-950 border border-emerald-950 p-3 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500 font-semibold text-sm" 
-                  placeholder="sophie, claire, julien..." 
+                  placeholder="Entrez votre identifiant..." 
                 />
               </div>
 
@@ -771,58 +956,6 @@ export default function App() {
                 S'authentifier
               </button>
             </form>
-
-            {/* Quick Demonstration login helper box */}
-            <div className="bg-slate-950/65 backdrop-blur-xs border border-teal-900/20 rounded-2xl p-4.5 space-y-2.5">
-              <h4 className="text-[11px] font-black text-emerald-400 uppercase tracking-widest">
-                🔑 Identifiants de test (Comptes configurés) :
-              </h4>
-              <p className="text-[10px] text-slate-400">
-                Chaque type de compte créé a uniquement accès aux fonctionnalités de sa fiche de poste :
-              </p>
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <button 
-                  type="button" 
-                  onClick={() => { setLoginUsername('admin'); setLoginPassword('pharma'); }}
-                  className="bg-emerald-950/20 hover:bg-emerald-900/35 border border-emerald-900/40 p-2 rounded-lg text-left text-emerald-200 font-semibold flex justify-between items-center transition-colors"
-                >
-                  <span>1. Administrateur</span>
-                  <span className="text-[8px] bg-emerald-900 text-emerald-300 px-1 py-0.5 rounded font-black">Admin</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => { setLoginUsername('sophie'); setLoginPassword('pharma'); }}
-                  className="bg-emerald-950/20 hover:bg-emerald-900/35 border border-emerald-900/40 p-2 rounded-lg text-left text-emerald-200 font-semibold flex justify-between items-center transition-colors"
-                >
-                  <span>2. Sophie (Titulaire)</span>
-                  <span className="text-[8px] bg-emerald-900 text-emerald-300 px-1 py-0.5 rounded font-black">Titulaire</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => { setLoginUsername('thomas'); setLoginPassword('pharma'); }}
-                  className="bg-slate-950 hover:bg-slate-900 border border-slate-800 p-2 rounded-lg text-left text-teal-200 font-semibold flex justify-between items-center transition-colors"
-                >
-                  <span>3. Thomas (Adjoint)</span>
-                  <span className="text-[8px] bg-slate-800 text-slate-300 px-1 py-0.5 rounded font-black">Adjoint</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => { setLoginUsername('claire'); setLoginPassword('pharma'); }}
-                  className="bg-slate-950 hover:bg-slate-900 border border-slate-800 p-2 rounded-lg text-left text-teal-200 font-semibold flex justify-between items-center transition-colors"
-                >
-                  <span>4. Claire (Préparateur)</span>
-                  <span className="text-[8px] bg-slate-800 text-slate-300 px-1 py-0.5 rounded font-black">Préparateur</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => { setLoginUsername('julien'); setLoginPassword('pharma'); }}
-                  className="bg-slate-950 hover:bg-slate-900 border border-slate-800 p-2 rounded-lg text-left text-teal-200 font-semibold flex justify-between items-center transition-colors col-span-2"
-                >
-                  <span>5. Julien Moreau (Stagiaire)</span>
-                  <span className="text-[8px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-black">Stagiaire</span>
-                </button>
-              </div>
-            </div>
 
           </div>
         </div>
@@ -1892,7 +2025,7 @@ export default function App() {
       {/* FOOTER GENERAL */}
       <footer className="bg-emerald-950 text-white/50 py-5 border-t border-emerald-900 text-center text-[10px]">
         <p>LOG PHARMA Officine v4.1 - Solution validée pour la dispensation dématérialisée.</p>
-        <p className="mt-1">© LOG PHARMA. Tous droits réservés. • Développé par <strong className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors uppercase tracking-wider">GT NUMERIQUE</strong></p>
+        <p className="mt-1">© LOG PHARMA. Tous droits réservés. • Développé par <a href="https://gt-numerique.vercel.app" target="_blank" rel="noopener noreferrer" className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors uppercase tracking-wider cursor-pointer">GT NUMÉRIQUE</a></p>
       </footer>
 
       {/* ================= MODALS REGISTRATION FORMS ================= */}
@@ -2276,8 +2409,8 @@ export default function App() {
               <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-slate-500 leading-normal text-[10px]">
                 🔑 <span className="font-bold text-slate-700">Identifiants Administrateur :</span>
                 <ul className="list-disc pl-4 mt-1 font-mono space-y-0.5 text-slate-600">
-                  <li>Login: <span className="font-bold text-emerald-800">admin</span></li>
-                  <li>Mot de passe: <span className="font-bold text-emerald-800">pharma</span></li>
+                  <li>Login: <span className="font-bold text-emerald-800">AdminGnammi</span></li>
+                  <li>Mot de passe: <span className="font-bold text-emerald-800">Gnammi1212@</span></li>
                 </ul>
               </div>
 
