@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
 import { 
   Building2, 
   Users, 
@@ -257,10 +256,6 @@ export default function App() {
   const [historySellerId, setHistorySellerId] = useState<string>('all');
   const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
 
-  // --- BARCODE / CIP SCANNER STATES ---
-  const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
-  const [scannerPurpose, setScannerPurpose] = useState<'pos' | 'stock'>('pos');
-
   // --- CURRENT USER AUTHENTICATION & SESSION ---
   const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
     const saved = localStorage.getItem('pharma_current_user');
@@ -494,22 +489,6 @@ export default function App() {
     } else {
       setActiveCart([...activeCart, { medicine: med, quantity: 1, refundedBySecu: med.requiresPrescription ? standardRefundRate : 0 }]);
     }
-  };
-
-  const handleBarcodeScanned = (code: string): boolean => {
-    const trimmed = code.trim();
-    if (!trimmed) return false;
-    const match = medicines.find(m => m.cip === trimmed || m.id === trimmed || m.name.toLowerCase() === trimmed.toLowerCase());
-    if (match) {
-      if (scannerPurpose === 'pos') {
-        handleAddToCart(match);
-      } else {
-        setStockSearch(match.cip);
-        setActiveTab('stock');
-      }
-      return true;
-    }
-    return false;
   };
 
   const updateCartQty = (id: string, delta: number) => {
@@ -1334,7 +1313,7 @@ export default function App() {
                 <div className="flex flex-col md:flex-row gap-3 justify-between items-center">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Catalogue Dispensation Caisse</span>
                   <div className="flex w-full md:w-auto items-center gap-2">
-                    <div className="relative w-full md:w-64">
+                    <div className="relative w-full md:w-80">
                       <Search className="absolute left-3 top-2 text-slate-400" size={14} />
                       <input 
                         type="text" 
@@ -1344,18 +1323,6 @@ export default function App() {
                         className="pl-8 pr-3 py-1.5 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs"
                       />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => { playBeep(); setScannerPurpose('pos'); setShowScannerModal(true); }}
-                      className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-extrabold px-3  py-1.5 rounded-lg text-xs transition-colors shadow-xs active:scale-[0.98] cursor-pointer"
-                      title="Scanner CIP par Caméra"
-                    >
-                      <Camera size={13} />
-                      <span className="font-bold flex items-center gap-0.5">
-                        <Barcode size={13} className="text-emerald-700" />
-                        <span>Scanner CIP</span>
-                      </span>
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1525,15 +1492,6 @@ export default function App() {
                   onChange={(e) => setStockSearch(e.target.value)}
                   className="bg-white border p-1.5 rounded focus:outline-emerald-600 flex-1"
                 />
-                <button
-                  type="button"
-                  onClick={() => { playBeep(); setScannerPurpose('stock'); setShowScannerModal(true); }}
-                  className="bg-emerald-50 hover:bg-emerald-105 border border-emerald-200 text-emerald-850 p-1.5 rounded flex items-center gap-1 font-bold select-none cursor-pointer active:scale-[0.97]"
-                  title="Scanner CIP par Caméra"
-                >
-                  <Camera size={13} />
-                  <Barcode size={13} className="text-emerald-700" />
-                </button>
               </div>
               <select 
                 value={stockCapFilter} 
@@ -2720,17 +2678,6 @@ export default function App() {
         </div>
       )}
 
-      {/* CAMERA BARCODE / CIP SCANNER MODAL */}
-      {showScannerModal && (
-        <BarcodeScannerModal
-          isOpen={showScannerModal}
-          onClose={() => setShowScannerModal(false)}
-          onScan={handleBarcodeScanned}
-          medicines={medicines}
-          purpose={scannerPurpose}
-        />
-      )}
-
       </div>
 
       {/* MODÈLE D'IMPRESSION PROFESSIONNEL ET PROPRE (EXCLUSIVEMENT EN IMPRESSION) */}
@@ -2967,394 +2914,3 @@ export default function App() {
   );
 }
 
-// ==========================================
-// H. BARCODE & CODE CIP OPTICAL READER MODAL
-// ==========================================
-interface BarcodeScannerModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onScan: (code: string) => boolean;
-  medicines: Medicine[];
-  purpose: 'pos' | 'stock';
-}
-
-function BarcodeScannerModal({ isOpen, onClose, onScan, medicines, purpose }: BarcodeScannerModalProps) {
-  const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const [manualCode, setManualCode] = useState<string>('');
-  const [scanStatus, setScanStatus] = useState<{ type: 'idle' | 'success' | 'notFound' | 'error'; message: string }>({ type: 'idle', message: '' });
-  const [isContinuous, setIsContinuous] = useState<boolean>(purpose === 'pos');
-  const [sessionScanned, setSessionScanned] = useState<{ code: string; name: string; time: string; status: 'success' | 'fail' }[]>([]);
-  const [scannerError, setScannerError] = useState<string>('');
-  const [camAuthorized, setCamAuthorized] = useState<boolean>(true);
-
-  // Initialize camera list & standard scanner instance
-  useEffect(() => {
-    let html5Qrcode: Html5Qrcode | null = null;
-    let isActive = true;
-
-    const initScanner = async () => {
-      try {
-        const element = document.getElementById("reader-viewport");
-        if (!element) return;
-
-        // Gracefully check if camera devices are physically present
-        if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
-          try {
-            const rawDevices = await navigator.mediaDevices.enumerateDevices();
-            const hasVideoInput = rawDevices.some(d => d.kind === 'videoinput');
-            if (!hasVideoInput) {
-              setCamAuthorized(false);
-              setScannerError("Aucune caméra physique de numérisation n'a été détectée sur cet appareil. Veuillez utiliser le simulateur de code CIP ou la saisie manuelle ci-contre.");
-              return;
-            }
-          } catch (e) {
-            console.log("Devices check failed, continuing with direct canvas initialization", e);
-          }
-        }
-
-        html5Qrcode = new Html5Qrcode("reader-viewport");
-
-        if (cameras.length === 0) {
-          const devices = await Html5Qrcode.getCameras();
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-            // Prefer back camera if available
-            const backCam = devices.find(d => 
-              d.label.toLowerCase().includes('back') || 
-              d.label.toLowerCase().includes('arrière') || 
-              d.label.toLowerCase().includes('rear') || 
-              d.label.toLowerCase().includes('environ')
-            );
-            const initialCamId = backCam ? backCam.id : devices[0].id;
-            setSelectedCameraId(initialCamId);
-            runScanner(html5Qrcode, initialCamId);
-          } else {
-            setCamAuthorized(false);
-            setScannerError("Aucune caméra de numérisation n'a été détectée.");
-          }
-        } else {
-          const targetCamId = selectedCameraId || cameras[0].id;
-          runScanner(html5Qrcode, targetCamId);
-        }
-      } catch (err: any) {
-        console.warn("Scanner startup handled with fallback:", err);
-        setCamAuthorized(false);
-        const isNotFoundError = err.name === 'NotFoundError' || 
-                              err.name === 'DevicesNotFoundError' ||
-                              err.message?.includes('found') || 
-                              err.message?.includes('object can not be found');
-        if (isNotFoundError) {
-          setScannerError("Aucun appareil photo détecté sur cette machine. Veuillez utiliser le simulateur ci-contre ou renseigner le code manuellement.");
-        } else {
-          setScannerError("Accès à la caméra refusé ou bloqué par les règles de sécurité de l'iframe.");
-        }
-      }
-    };
-
-    const runScanner = (instance: Html5Qrcode, camId: string) => {
-      instance.start(
-        camId,
-        {
-          fps: 15,
-          qrbox: (w, h) => {
-            const scanW = Math.floor(w * 0.82);
-            const scanH = Math.floor(h * 0.50);
-            return { width: Math.min(scanW, 340), height: Math.min(scanH, 180) };
-          },
-          aspectRatio: 1.3333333
-        },
-        (decodedText) => {
-          if (isActive) handleDecodedText(decodedText);
-        },
-        () => {} // Silent error callback
-      ).catch(err => {
-        console.error("Instance start failed", err);
-        if (isActive) {
-          setScannerError("L'appareil photo n'a pas pu s'initialiser correctement.");
-        }
-      });
-    };
-
-    // Buffer for React modal render
-    const timer = setTimeout(() => {
-      initScanner();
-    }, 200);
-
-    return () => {
-      isActive = false;
-      clearTimeout(timer);
-      if (html5Qrcode) {
-        if (html5Qrcode.isScanning) {
-          html5Qrcode.stop().catch(e => console.error("Scanner cleanup failed", e));
-        }
-      }
-    };
-  }, [selectedCameraId]);
-
-  const handleDecodedText = (code: string) => {
-    const trimmed = code.trim();
-    if (!trimmed) return;
-
-    // Check if matching medicine
-    const matched = onScan(trimmed);
-    const foundMed = medicines.find(m => m.cip === trimmed || m.id === trimmed || m.name.toLowerCase() === trimmed.toLowerCase());
-    
-    const nowStr = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-    if (matched && foundMed) {
-      setScanStatus({
-        type: 'success',
-        message: `✓ Saisie réussie : ${foundMed.name} (Quantité: ${foundMed.quantity} b.)`
-      });
-      // Append to session scanner log
-      setSessionScanned(prev => [
-        { code: trimmed, name: foundMed.name, time: nowStr, status: 'success' },
-        ...prev
-      ]);
-
-      if (!isContinuous) {
-        setTimeout(() => onClose(), 800);
-      }
-    } else {
-      setScanStatus({
-        type: 'notFound',
-        message: `⚠ Code CIP "${trimmed}" non répertorié en stock.`
-      });
-      // Append to session scanner log
-      setSessionScanned(prev => [
-        { code: trimmed, name: 'Médicament Inconnu', time: nowStr, status: 'fail' },
-        ...prev
-      ]);
-    }
-  };
-
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (manualCode) {
-      handleDecodedText(manualCode);
-      setManualCode('');
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-55 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col md:flex-row h-auto max-h-[90vh] text-slate-100 font-sans">
-        
-        {/* Left Side: Viewport & Settings */}
-        <div className="flex-1 p-5 flex flex-col justify-between space-y-4 border-r border-[#1e293b]">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <div className="bg-emerald-950/80 border border-emerald-500/30 p-1.5 rounded-lg text-emerald-400">
-                  <Camera size={16} />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-xs tracking-wide uppercase text-slate-200">Lecture Optique CIP / EAN</h4>
-                  <span className="text-[10px] text-slate-400">
-                    {purpose === 'pos' ? 'Caisse : Ajout direct au panier' : 'Inventaire : Recherche instantanée'}
-                  </span>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                onClick={onClose}
-                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            {/* Camera selector if cameras are present */}
-            {cameras.length > 1 && (
-              <div className="mb-3 flex items-center gap-1.5 text-[10px]">
-                <span className="text-slate-400 block whitespace-nowrap">Caméra active :</span>
-                <select 
-                  value={selectedCameraId}
-                  onChange={(e) => setSelectedCameraId(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 py-1 px-2 rounded-md outline-none text-slate-200 w-full"
-                >
-                  {cameras.map((c, idx) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label || `Appareil ${idx + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Camera Scan Window */}
-          <div className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-800 h-64 flex flex-col items-center justify-center">
-            {/* Viewport element for html5-qrcode */}
-            {camAuthorized && !scannerError ? (
-              <div id="reader-viewport" className="w-full h-full object-cover"></div>
-            ) : null}
-
-            {/* Glowing horizontal laser line animation */}
-            {camAuthorized && !scannerError && (
-              <div className="absolute inset-x-0 top-1/2 h-[2px] bg-red-600 shadow-[0_0_8px_#ed3c3c] opacity-80 animate-pulse pointer-events-none"></div>
-            )}
-
-            {/* Laser reticle boundary lines */}
-            {camAuthorized && !scannerError && (
-              <div className="absolute inset-5 border border-dashed border-emerald-500/25 rounded-md pointer-events-none flex items-center justify-center">
-                <span className="p-1 px-2 rounded bg-slate-950/70 border border-emerald-500/20 text-[9px] text-emerald-400 font-bold tracking-widest uppercase">
-                  Scanner Actif...
-                </span>
-              </div>
-            )}
-
-            {/* No camera permission/authorization error */}
-            {!camAuthorized && (
-              <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-xs">
-                <span className="text-red-500 text-3xl mb-2">⚠</span>
-                <h5 className="font-bold text-slate-200">Caméra Inaccessible</h5>
-                <p className="text-slate-450 mt-1 leading-normal text-[11px] max-w-[280px]">
-                  Le navigateur refuse l'accès vidéo ou aucun appareil n'est connecté. Utilisez le simulateur de scan ou la saisie manuelle ci-dessous.
-                </p>
-              </div>
-            )}
-
-            {scannerError && camAuthorized && (
-              <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-xs">
-                <span className="text-amber-500 text-3xl mb-2">⚠</span>
-                <h5 className="font-bold text-slate-200">Erreur de démarrage</h5>
-                <p className="text-slate-450 mt-1 leading-normal text-[11px]">
-                  {scannerError}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Continuous Scanning Switch */}
-          <div className="flex justify-between items-center bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60 text-xs text-slate-300">
-            <div>
-              <span className="font-bold block text-slate-200 text-[11px]">Dispensation Multi-Scans</span>
-              <span className="text-[9px] leading-tight block text-slate-400 mt-0.5">Laisser l'appareil photo allumé pour scanner plusieurs produits de suite.</span>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={isContinuous} 
-                onChange={(e) => setIsContinuous(e.target.checked)}
-                className="sr-only peer" 
-              />
-              <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-            </label>
-          </div>
-        </div>
-
-        {/* Right Side: Log of Scans & Manual Simulator Fallback */}
-        <div className="flex-1 p-5 flex flex-col justify-between space-y-4 bg-slate-900/60 overflow-y-auto">
-          {/* Top block: Scans history */}
-          <div className="space-y-3 flex-1 flex flex-col min-h-0">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-              💡 Simulateur de Code CIP
-            </span>
-            
-            {/* Simulation Shortcuts helper for users with no camera */}
-            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[10px] text-slate-300">
-              <span className="font-bold text-slate-400 block mb-1 text-[9px] uppercase tracking-wider">Raccourcis Démo (Cliquez pour simuler le scan) :</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[110px] overflow-y-auto">
-                {medicines.slice(0, 6).map(m => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => handleDecodedText(m.cip)}
-                    className="bg-slate-800 border border-slate-700 hover:bg-emerald-950/30 hover:border-emerald-500/40 text-[9px] text-slate-205 p-1.5 rounded-md text-left truncate transition-all cursor-pointer block"
-                    title={`Code CIP de ${m.name}`}
-                  >
-                    🚀 <span className="font-bold text-white">{m.name}</span>
-                    <span className="block font-mono text-[8px] text-slate-450 mt-0.5">CIP: {m.cip}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Scanning Status Alerts Pane */}
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Résultat de Numérisation</span>
-              
-              {scanStatus.type === 'idle' ? (
-                <div className="border border-dashed border-slate-800 text-slate-400 py-3.5 px-3 rounded-xl text-center leading-normal">
-                  <div className="text-xl">📷</div>
-                  <span className="block text-[11px] font-medium mt-1">Prêt pour la détection...</span>
-                </div>
-              ) : (
-                <div className={`p-3 rounded-xl border flex items-start gap-2.5 ${
-                  scanStatus.type === 'success' ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300' :
-                  scanStatus.type === 'notFound' ? 'bg-amber-950/20 border-amber-500/40 text-amber-300' :
-                  'bg-red-950/20 border-red-500/40 text-red-300'
-                }`}>
-                  <span className="text-sm font-bold mt-0.5">
-                    {scanStatus.type === 'success' ? '✓' : '⚠'}
-                  </span>
-                  <div>
-                    <p className="font-extrabold text-[11px] leading-tight">{scanStatus.message}</p>
-                    <span className="text-[8px] mt-0.5 block opacity-70">Enregistré à {new Date().toLocaleTimeString('fr-FR')}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Scanned articles list */}
-            {sessionScanned.length > 0 && (
-              <div className="flex-1 min-h-[90px] overflow-y-auto pr-1 mt-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                  Flux des produits scannés ({sessionScanned.length})
-                </span>
-                <div className="space-y-1.5">
-                  {sessionScanned.map((item, idx) => (
-                    <div key={idx} className="bg-slate-950 border border-slate-850 p-2 rounded-lg flex justify-between items-center text-[10px]">
-                      <div>
-                        <span className="block font-bold text-slate-200">{item.name}</span>
-                        <span className="font-mono text-[8px] text-slate-400">CIP: {item.code} - {item.time}</span>
-                      </div>
-                      <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold ${
-                        item.status === 'success' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : 'bg-rose-950 text-rose-400 border border-rose-900'
-                      }`}>
-                        {item.status === 'success' ? 'Enregistré' : 'Inconnu'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Saisie Manuelle Form */}
-          <form onSubmit={handleManualSubmit} className="pt-3 border-t border-slate-800 grid grid-cols-1 gap-2 shrink-0">
-            <div>
-              <label className="block text-slate-400 font-bold uppercase tracking-widest text-[8px] mb-1">Coup de douchette manuel (CIP / EAN)</label>
-              <div className="flex gap-2">
-                <input 
-                  type="text"
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  placeholder="Ex: 340093848206 (Doliprane)..."
-                  className="bg-slate-950 border border-slate-800 rounded-lg p-2 flex-1 text-slate-100 outline-none text-xs focus:border-emerald-500 transition-colors"
-                />
-                <button 
-                  type="submit"
-                  className="bg-emerald-700 hover:bg-emerald-600 font-extrabold text-white px-4 py-2 rounded-lg text-xs leading-normal transition-colors cursor-pointer select-none active:scale-[0.98]"
-                >
-                  Valider
-                </button>
-              </div>
-            </div>
-            
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="bg-slate-800 hover:bg-slate-750 font-semibold text-slate-300 py-2 rounded-lg text-xs leading-normal transition-colors cursor-pointer text-center select-none"
-            >
-              Fermer la console optique
-            </button>
-          </form>
-        </div>
-
-      </div>
-    </div>
-  );
-}
