@@ -70,7 +70,7 @@ interface Medicine {
 interface Employee {
   id: string;
   name: string;
-  role: 'Admin' | 'Pharmacien Titulaire' | 'Pharmacien Adjoint' | 'Préparateur' | 'Stagiaire' | 'Conseiller';
+  role: string;
   phone: string;
   email: string;
   shift: string;
@@ -442,6 +442,8 @@ export default function App() {
   // Modals & form variables
   const [showAddMedModal, setShowAddMedModal] = useState<boolean>(false);
   const [showAddEmpModal, setShowAddEmpModal] = useState<boolean>(false);
+  const [selectedRoleOption, setSelectedRoleOption] = useState<string>('Pharmacien Titulaire');
+  const [customRoleText, setCustomRoleText] = useState<string>('');
   const [showAddPartnerModal, setShowAddPartnerModal] = useState<boolean>(false);
   const [showAddClientModal, setShowAddClientModal] = useState<boolean>(false);
   
@@ -713,6 +715,164 @@ export default function App() {
     });
     
     doc.save(`Rapport_Depenses_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const handleDownloadMaternityPDF = () => {
+    playBeep();
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(4, 120, 87); // Emerald color
+    doc.text(pharmacyInfo.companyName, 14, 20);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(pharmacyInfo.pharmacyName, 14, 25);
+    doc.text(pharmacyInfo.address, 14, 30);
+    doc.text(`Tél : ${pharmacyInfo.phone} | Email : ${pharmacyInfo.email}`, 14, 35);
+    
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(30);
+    doc.text("RAPPORT JOURNALIER MATERNITÉ", 14, 48);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 14, 53);
+    doc.text(`Auteur du rapport : ${currentUser?.name || 'Administrateur'} (${currentUser?.role || 'Comptable'})`, 14, 58);
+    
+    // Period & Totals
+    const filteredRecords = maternityRecords.filter(r => !maternityFilterDate || r.date === maternityFilterDate);
+    const totalCaisse = filteredRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+    const periodStr = maternityFilterDate ? `Activité du ${new Date(maternityFilterDate).toLocaleDateString('fr-FR')}` : 'Historique complet des écritures';
+    doc.text(`Période : ${periodStr}`, 14, 68);
+    doc.text(`Recettes Caisse Maternité : ${totalCaisse.toFixed(2)} FCFA`, 14, 74);
+    
+    // Table columns
+    const columns = [
+      { header: 'Réf', dataKey: 'id' },
+      { header: 'Date', dataKey: 'date' },
+      { header: 'Dossier', dataKey: 'dossier' },
+      { header: 'Sage-femme', dataKey: 'sageFemme' },
+      { header: 'Soins / Actes Maternité', dataKey: 'hospitalizationSoins' },
+      { header: 'Consultation', dataKey: 'consultationMaternite' },
+      { header: 'Caisse du Jour', dataKey: 'caisseDuJour' },
+      { header: 'Observation', dataKey: 'observation' }
+    ];
+    
+    const rows = filteredRecords.map(r => ({
+      id: r.id,
+      date: new Date(r.date).toLocaleDateString('fr-FR'),
+      dossier: r.dossier,
+      sageFemme: r.sageFemme,
+      hospitalizationSoins: r.hospitalizationSoins,
+      consultationMaternite: r.consultationMaternite,
+      caisseDuJour: `${r.caisseDuJour.toFixed(2)} FCFA`,
+      observation: r.observation
+    }));
+    
+    autoTable(doc, {
+      startY: 82,
+      columns: columns,
+      body: rows,
+      theme: 'striped',
+      headStyles: { fillColor: [4, 120, 87] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        hospitalizationSoins: { cellWidth: 40 },
+        consultationMaternite: { cellWidth: 35 },
+        observation: { cellWidth: 30 }
+      }
+    });
+    
+    doc.save(`Rapport_Maternite_${maternityFilterDate || 'complet'}.pdf`);
+  };
+
+  const handleDownloadDispensaryPDF = () => {
+    playBeep();
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(15, 23, 42); // slate-900 color
+    doc.text(pharmacyInfo.companyName, 14, 20);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(pharmacyInfo.pharmacyName, 14, 25);
+    doc.text(pharmacyInfo.address, 14, 30);
+    doc.text(`Tél : ${pharmacyInfo.phone} | Email : ${pharmacyInfo.email}`, 14, 35);
+    
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(30);
+    doc.text("RAPPORT JOURNALIER DISPENSAIRE", 14, 48);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 14, 53);
+    doc.text(`Auteur du rapport : ${currentUser?.name || 'Administrateur'} (${currentUser?.role || 'Comptable'})`, 14, 58);
+    
+    // Period & Totals
+    const filteredRecords = dispensaryRecords.filter(r => !dispensaryFilterDate || r.date === dispensaryFilterDate);
+    const totalCaisse = filteredRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+    const periodStr = dispensaryFilterDate ? `Activité du ${new Date(dispensaryFilterDate).toLocaleDateString('fr-FR')}` : 'Historique complet des écritures';
+    doc.text(`Période : ${periodStr}`, 14, 68);
+    doc.text(`Recettes Caisse Dispensaire : ${totalCaisse.toFixed(2)} FCFA`, 14, 74);
+    
+    // Table columns
+    const columns = [
+      { header: 'Réf', dataKey: 'id' },
+      { header: 'Date', dataKey: 'date' },
+      { header: 'Dossier', dataKey: 'dossier' },
+      { header: 'Infirmier de Garde', dataKey: 'infirmierGarde' },
+      { header: 'Consultation Médicale', dataKey: 'consultationMedicale' },
+      { header: 'Soins / Actes Dispensaire', dataKey: 'hospitalizationSoins' },
+      { header: 'Caisse du Jour', dataKey: 'caisseDuJour' },
+      { header: 'Observation', dataKey: 'observation' }
+    ];
+    
+    const rows = filteredRecords.map(r => ({
+      id: r.id,
+      date: new Date(r.date).toLocaleDateString('fr-FR'),
+      dossier: r.dossier,
+      infirmierGarde: r.infirmierGarde,
+      consultationMedicale: r.consultationMedicale,
+      hospitalizationSoins: r.hospitalizationSoins,
+      caisseDuJour: `${r.caisseDuJour.toFixed(2)} FCFA`,
+      observation: r.observation
+    }));
+    
+    autoTable(doc, {
+      startY: 82,
+      columns: columns,
+      body: rows,
+      theme: 'striped',
+      headStyles: { fillColor: [15, 23, 42] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        hospitalizationSoins: { cellWidth: 40 },
+        consultationMedicale: { cellWidth: 35 },
+        observation: { cellWidth: 30 }
+      }
+    });
+    
+    doc.save(`Rapport_Dispensaire_${dispensaryFilterDate || 'complet'}.pdf`);
   };
 
   const handleDownloadExpensesCSV = () => {
@@ -3643,12 +3803,21 @@ export default function App() {
                       )}
                     </div>
 
-                    <button 
-                      onClick={() => { playBeep(); handlePrintMaternityReport(); }}
-                      className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
-                    >
-                      🖨️ Imprimer Rapport Maternité
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button 
+                        onClick={() => { playBeep(); handlePrintMaternityReport(); }}
+                        className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                      >
+                        🖨️ Imprimer Rapport Maternité
+                      </button>
+                      <button 
+                        onClick={handleDownloadMaternityPDF}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                      >
+                        <Download size={13} />
+                        <span>Télécharger PDF</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Records Table */}
@@ -3953,12 +4122,21 @@ export default function App() {
                       )}
                     </div>
 
-                    <button 
-                      onClick={() => { playBeep(); handlePrintDispensaryReport(); }}
-                      className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
-                    >
-                      🖨️ Imprimer Rapport Dispensaire
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button 
+                        onClick={() => { playBeep(); handlePrintDispensaryReport(); }}
+                        className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                      >
+                        🖨️ Imprimer Rapport Dispensaire
+                      </button>
+                      <button 
+                        onClick={handleDownloadDispensaryPDF}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                      >
+                        <Download size={13} />
+                        <span>Télécharger PDF</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Records Table */}
@@ -4247,10 +4425,13 @@ export default function App() {
           <form onSubmit={(e) => {
             e.preventDefault();
             const data = new FormData(e.currentTarget);
+            const roleOption = data.get('roleOption') as string;
+            const finalRole = roleOption === 'Autre' ? (data.get('customRoleText') as string || 'Collaborateur').trim() : roleOption;
+            
             const newEmp: Employee = {
               id: `emp-${Date.now()}`,
               name: data.get('name') as string,
-              role: data.get('role') as any,
+              role: finalRole,
               phone: data.get('phone') as string,
               email: data.get('email') as string,
               shift: data.get('shift') as string,
@@ -4261,11 +4442,13 @@ export default function App() {
             };
             setEmployees([...employees, newEmp]);
             setShowAddEmpModal(false);
+            setSelectedRoleOption('Pharmacien Titulaire');
+            setCustomRoleText('');
             playBeep();
           }} className="bg-white rounded-xl w-full max-w-sm p-5 border text-xs space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
               <h4 className="font-bold text-sm text-slate-900">Enregistrer un Collaborateur</h4>
-              <button type="button" onClick={() => setShowAddEmpModal(false)}><X size={16} /></button>
+              <button type="button" onClick={() => { setShowAddEmpModal(false); setSelectedRoleOption('Pharmacien Titulaire'); setCustomRoleText(''); }}><X size={16} /></button>
             </div>
             <div className="space-y-1">
               <label className="block text-slate-500 font-bold">Nom et Prénom *</label>
@@ -4273,15 +4456,38 @@ export default function App() {
             </div>
             <div className="space-y-1">
               <label className="block text-slate-500 font-bold">Rôle / Discipline du poste *</label>
-              <select name="role" className="w-full bg-slate-50 border p-2 rounded">
+              <select 
+                name="roleOption" 
+                value={selectedRoleOption}
+                onChange={(e) => {
+                  playBeep();
+                  setSelectedRoleOption(e.target.value);
+                }}
+                className="w-full bg-slate-50 border p-2 rounded"
+              >
                 <option value="Pharmacien Titulaire">Pharmacien Titulaire (Admin)</option>
                 <option value="Admin">Administrateur Technique</option>
                 <option value="Pharmacien Adjoint">Pharmacien Adjoint</option>
                 <option value="Préparateur">Préparateur</option>
                 <option value="Stagiaire">Stagiaire</option>
                 <option value="Conseiller">Conseiller</option>
+                <option value="Autre">Autre (Saisir manuellement)...</option>
               </select>
             </div>
+            {selectedRoleOption === 'Autre' && (
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Saisir le Rôle / Poste personnalisé *</label>
+                <input 
+                  required 
+                  type="text" 
+                  name="customRoleText" 
+                  value={customRoleText}
+                  onChange={(e) => setCustomRoleText(e.target.value)}
+                  className="w-full bg-slate-50 border p-2 rounded text-slate-800 focus:outline-emerald-650" 
+                  placeholder="Ex: Comptable, Chauffeur, Agent d'entretien..." 
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-slate-500 font-bold">Identifiant unique *</label>
@@ -4307,7 +4513,7 @@ export default function App() {
               <input required type="text" name="shift" className="w-full bg-slate-50 border p-2 rounded" defaultValue="09h - 17h" />
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t">
-              <button type="button" onClick={() => setShowAddEmpModal(false)} className="px-3 py-1.5 text-slate-500">Annuler</button>
+              <button type="button" onClick={() => { setShowAddEmpModal(false); setSelectedRoleOption('Pharmacien Titulaire'); setCustomRoleText(''); }} className="px-3 py-1.5 text-slate-500">Annuler</button>
               <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold">Valider l'embauche</button>
             </div>
           </form>
