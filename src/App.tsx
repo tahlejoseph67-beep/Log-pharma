@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { GuideSection } from './components/GuideSection';
 import { 
   Building2, 
   Users, 
@@ -12,6 +13,9 @@ import {
   UserCheck, 
   Plus, 
   FileText, 
+  BookOpen,
+  Play,
+  Video,
   ShoppingCart, 
   CreditCard, 
   ChevronRight, 
@@ -428,6 +432,9 @@ export default function App() {
   });
 
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
+  const [editingMaternityRecord, setEditingMaternityRecord] = useState<MaternityRecord | null>(null);
+  const [editingDispensaryRecord, setEditingDispensaryRecord] = useState<DispensaryRecord | null>(null);
+  const [editingLaboratoryRecord, setEditingLaboratoryRecord] = useState<LaboratoryRecord | null>(null);
 
   // State sync
   useEffect(() => { localStorage.setItem('pharma_medicines', JSON.stringify(medicines)); }, [medicines]);
@@ -441,7 +448,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('pharma_dispensary', JSON.stringify(dispensaryRecords)); }, [dispensaryRecords]);
   useEffect(() => { localStorage.setItem('pharma_laboratory', JSON.stringify(laboratoryRecords)); }, [laboratoryRecords]);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire' | 'laboratoire'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire' | 'laboratoire' | 'guide'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => localStorage.getItem('pharma_sidebar_collapsed') === 'true');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
@@ -1511,12 +1518,12 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       const allowedTabsForRoles: Record<string, string[]> = {
-        'Admin': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'maternite', 'dispensaire'],
-        'Pharmacien Titulaire': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'maternite', 'dispensaire'],
-        'Pharmacien Adjoint': ['pos', 'stock', 'partenaires', 'clients', 'depenses'],
-        'Préparateur': ['pos', 'stock', 'clients', 'depenses'],
-        'Stagiaire': ['pos', 'clients', 'depenses'],
-        'Conseiller': ['pos', 'clients', 'depenses']
+        'Admin': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'maternite', 'dispensaire', 'guide'],
+        'Pharmacien Titulaire': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'maternite', 'dispensaire', 'guide'],
+        'Pharmacien Adjoint': ['pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
+        'Préparateur': ['pos', 'stock', 'clients', 'depenses', 'guide'],
+        'Stagiaire': ['pos', 'clients', 'depenses', 'guide'],
+        'Conseiller': ['pos', 'clients', 'depenses', 'guide']
       };
 
       const userRole = currentUser.role || 'Stagiaire';
@@ -1911,6 +1918,62 @@ export default function App() {
     playBeep();
   };
 
+  const handleUpdateMaternityRecord = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingMaternityRecord) return;
+    const data = new FormData(e.currentTarget);
+    const updated: MaternityRecord = {
+      ...editingMaternityRecord,
+      date: data.get('date') as string,
+      dossier: data.get('dossier') as string,
+      sageFemme: data.get('sageFemme') as string,
+      hospitalizationSoins: data.get('hospitalizationSoins') as string,
+      consultationMaternite: data.get('consultationMaternite') as string,
+      caisseDuJour: parseFloat(data.get('caisseDuJour') as string) || 0,
+      observation: data.get('observation') as string,
+    };
+    setMaternityRecords(prev => prev.map(r => r.id === editingMaternityRecord.id ? updated : r));
+    setEditingMaternityRecord(null);
+    playBeep();
+  };
+
+  const handleUpdateDispensaryRecord = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingDispensaryRecord) return;
+    const data = new FormData(e.currentTarget);
+    const updated: DispensaryRecord = {
+      ...editingDispensaryRecord,
+      date: data.get('date') as string,
+      dossier: data.get('dossier') as string,
+      infirmierGarde: data.get('infirmierGarde') as string,
+      consultationMedicale: data.get('consultationMedicale') as string,
+      hospitalizationSoins: data.get('hospitalizationSoins') as string,
+      caisseDuJour: parseFloat(data.get('caisseDuJour') as string) || 0,
+      observation: data.get('observation') as string,
+    };
+    setDispensaryRecords(prev => prev.map(r => r.id === editingDispensaryRecord.id ? updated : r));
+    setEditingDispensaryRecord(null);
+    playBeep();
+  };
+
+  const handleUpdateLaboratoryRecord = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingLaboratoryRecord) return;
+    const data = new FormData(e.currentTarget);
+    const updated: LaboratoryRecord = {
+      ...editingLaboratoryRecord,
+      date: data.get('date') as string,
+      dossier: data.get('dossier') as string,
+      technician: data.get('technician') as string,
+      testType: data.get('testType') as string,
+      caisseDuJour: parseFloat(data.get('caisseDuJour') as string) || 0,
+      observation: data.get('observation') as string,
+    };
+    setLaboratoryRecords(prev => prev.map(r => r.id === editingLaboratoryRecord.id ? updated : r));
+    setEditingLaboratoryRecord(null);
+    playBeep();
+  };
+
   const handleAdminLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (adminUsername.trim().toLowerCase() === 'admingnammi' && adminPassword === 'Gnammi1212@') {
@@ -2022,12 +2085,12 @@ export default function App() {
   };
 
   const allowedTabsForRoles: Record<string, string[]> = {
-    'Admin': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses'],
-    'Pharmacien Titulaire': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses'],
-    'Pharmacien Adjoint': ['pos', 'stock', 'partenaires', 'clients', 'depenses'],
-    'Préparateur': ['pos', 'stock', 'clients', 'depenses'],
-    'Stagiaire': ['pos', 'clients', 'depenses'],
-    'Conseiller': ['pos', 'clients', 'depenses']
+    'Admin': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide'],
+    'Pharmacien Titulaire': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide'],
+    'Pharmacien Adjoint': ['pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
+    'Préparateur': ['pos', 'stock', 'clients', 'depenses', 'guide'],
+    'Stagiaire': ['pos', 'clients', 'depenses', 'guide'],
+    'Conseiller': ['pos', 'clients', 'depenses', 'guide']
   };
 
   const userRole = currentUser?.role || 'Stagiaire';
@@ -2041,6 +2104,8 @@ export default function App() {
   } else if (activeTab === 'laboratoire') {
     const emp = employees.find(e => e.id === currentUser?.id);
     isTabAuthorized = isAdmin || !!emp?.canAccessLaboratory;
+  } else if (activeTab === 'guide') {
+    isTabAuthorized = true;
   } else {
     isTabAuthorized = !!allowedTabsForRoles[userRole]?.includes(activeTab);
   }
@@ -2252,6 +2317,7 @@ export default function App() {
                 { id: 'maternite', label: 'Compta Maternité', icon: Heart, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessMaternity },
                 { id: 'dispensaire', label: 'Compta Dispensaire', icon: Activity, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessDispensary },
                 { id: 'laboratoire', label: 'Compta Laboratoire', icon: FlaskConical, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessLaboratory },
+                { id: 'guide', label: "Guide d'Utilisation", icon: BookOpen, roles: ['Admin', 'Pharmacien Titulaire', 'Pharmacien Adjoint', 'Préparateur', 'Stagiaire', 'Conseiller'] },
               ].filter(tab => !currentUser || tab.roles.includes(currentUser.role) || tab.forceShow).map((tab) => {
                 const Icon = tab.icon;
                 const statusActive = activeTab === tab.id;
@@ -4310,6 +4376,20 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            if (window.confirm("🚨 ATTENTION : Êtes-vous sûr de vouloir supprimer définitivement TOUTES les fiches de la Compta Maternité ? Cette action est irréversible et videra tout l'historique de cette section.")) {
+                              playBeep();
+                              setMaternityRecords([]);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                        >
+                          <Trash2 size={13} />
+                          <span>Vider la Compta</span>
+                        </button>
+                      )}
                       <button 
                         onClick={() => { playBeep(); handlePrintMaternityReport(); }}
                         className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
@@ -4370,18 +4450,34 @@ export default function App() {
                                   <span className="text-[10px] text-slate-400">{rec.recordedBy.role}</span>
                                 </td>
                                 <td className="p-3 text-right">
-                                  <button 
-                                    onClick={() => {
-                                      if (confirm(`Voulez-vous vraiment supprimer la fiche de maternité ${rec.id} ?`)) {
-                                        playBeep();
-                                        setMaternityRecords(prev => prev.filter(r => r.id !== rec.id));
-                                      }
-                                    }}
-                                    className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
-                                    title="Supprimer la fiche"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                  {isAdmin ? (
+                                    <div className="flex justify-end gap-1">
+                                      <button 
+                                        onClick={() => {
+                                          playBeep();
+                                          setEditingMaternityRecord(rec);
+                                        }}
+                                        className="text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                        title="Modifier la fiche"
+                                      >
+                                        <Edit3 size={13} />
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          if (confirm(`🚨 ATTENTION : Voulez-vous vraiment supprimer définitivement la fiche de maternité ${rec.id} ? Cette action est irréversible.`)) {
+                                            playBeep();
+                                            setMaternityRecords(prev => prev.filter(r => r.id !== rec.id));
+                                          }
+                                        }}
+                                        className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                        title="Supprimer la fiche"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px] italic">Réservé à l'Admin</span>
+                                  )}
                                 </td>
                               </tr>
                             ))
@@ -4629,6 +4725,20 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            if (window.confirm("🚨 ATTENTION : Êtes-vous sûr de vouloir supprimer définitivement TOUTES les fiches de la Compta Dispensaire ? Cette action est irréversible et videra tout l'historique de cette section.")) {
+                              playBeep();
+                              setDispensaryRecords([]);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                        >
+                          <Trash2 size={13} />
+                          <span>Vider la Compta</span>
+                        </button>
+                      )}
                       <button 
                         onClick={() => { playBeep(); handlePrintDispensaryReport(); }}
                         className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
@@ -4689,18 +4799,34 @@ export default function App() {
                                   <span className="text-[10px] text-slate-400">{rec.recordedBy.role}</span>
                                 </td>
                                 <td className="p-3 text-right">
-                                  <button 
-                                    onClick={() => {
-                                      if (confirm(`Voulez-vous vraiment supprimer la fiche de dispensaire ${rec.id} ?`)) {
-                                        playBeep();
-                                        setDispensaryRecords(prev => prev.filter(r => r.id !== rec.id));
-                                      }
-                                    }}
-                                    className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
-                                    title="Supprimer la fiche"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                  {isAdmin ? (
+                                    <div className="flex justify-end gap-1">
+                                      <button 
+                                        onClick={() => {
+                                          playBeep();
+                                          setEditingDispensaryRecord(rec);
+                                        }}
+                                        className="text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                        title="Modifier la fiche"
+                                      >
+                                        <Edit3 size={13} />
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          if (confirm(`🚨 ATTENTION : Voulez-vous vraiment supprimer définitivement la fiche de dispensaire ${rec.id} ? Cette action est irréversible.`)) {
+                                            playBeep();
+                                            setDispensaryRecords(prev => prev.filter(r => r.id !== rec.id));
+                                          }
+                                        }}
+                                        className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                        title="Supprimer la fiche"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px] italic">Réservé à l'Admin</span>
+                                  )}
                                 </td>
                               </tr>
                             ))
@@ -4948,6 +5074,20 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            if (window.confirm("🚨 ATTENTION : Êtes-vous sûr de vouloir supprimer définitivement TOUTES les fiches de la Compta Laboratoire ? Cette action est irréversible et videra tout l'historique de cette section.")) {
+                              playBeep();
+                              setLaboratoryRecords([]);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                        >
+                          <Trash2 size={13} />
+                          <span>Vider la Compta</span>
+                        </button>
+                      )}
                       <button 
                         onClick={() => { playBeep(); handlePrintLaboratoryReport(); }}
                         className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
@@ -5006,18 +5146,34 @@ export default function App() {
                                   <span className="text-[10px] text-slate-400">{rec.recordedBy.role}</span>
                                 </td>
                                 <td className="p-3 text-right">
-                                  <button 
-                                    onClick={() => {
-                                      if (confirm(`Voulez-vous vraiment supprimer la fiche de laboratoire ${rec.id} ?`)) {
-                                        playBeep();
-                                        setLaboratoryRecords(prev => prev.filter(r => r.id !== rec.id));
-                                      }
-                                    }}
-                                    className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
-                                    title="Supprimer la fiche"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                  {isAdmin ? (
+                                    <div className="flex justify-end gap-1">
+                                      <button 
+                                        onClick={() => {
+                                          playBeep();
+                                          setEditingLaboratoryRecord(rec);
+                                        }}
+                                        className="text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                        title="Modifier la fiche"
+                                      >
+                                        <Edit3 size={13} />
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          if (confirm(`🚨 ATTENTION : Voulez-vous vraiment supprimer définitivement la fiche de laboratoire ${rec.id} ? Cette action est irréversible.`)) {
+                                            playBeep();
+                                            setLaboratoryRecords(prev => prev.filter(r => r.id !== rec.id));
+                                          }
+                                        }}
+                                        className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                        title="Supprimer la fiche"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px] italic">Réservé à l'Admin</span>
+                                  )}
                                 </td>
                               </tr>
                             ))
@@ -5136,6 +5292,17 @@ export default function App() {
             </div>
           );
         })()}
+
+        {/* --- TABS 11: GUIDE D'UTILISATION --- */}
+        {activeTab === 'guide' && (
+          <GuideSection 
+            isAdmin={isAdmin}
+            currentUser={currentUser}
+            pharmacyInfo={pharmacyInfo}
+            playBeep={playBeep}
+            employees={employees}
+          />
+        )}
           </>
         )}
 
@@ -5383,6 +5550,172 @@ export default function App() {
             <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
               <button type="button" onClick={() => setEditingMedicine(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded">Annuler</button>
               <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold">Enregistrer les modifications</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* EDIT MATERNITY RECORD MODAL */}
+      {editingMaternityRecord && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleUpdateMaternityRecord} className="bg-white rounded-xl w-full max-w-sm p-5 border text-xs space-y-3 animate-scale-in">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>✏️ Modifier Fiche Maternité</span>
+                <span className="font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">{editingMaternityRecord.id}</span>
+              </h4>
+              <button type="button" onClick={() => setEditingMaternityRecord(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
+            </div>
+
+            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Date *</label>
+                <input required type="date" name="date" defaultValue={editingMaternityRecord.date} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">N° Dossier *</label>
+                <input required type="text" name="dossier" defaultValue={editingMaternityRecord.dossier} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Sage-femme *</label>
+                <input required type="text" name="sageFemme" defaultValue={editingMaternityRecord.sageFemme} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Hospitalisation / Actes *</label>
+                <input required type="text" name="hospitalizationSoins" defaultValue={editingMaternityRecord.hospitalizationSoins} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Consultation *</label>
+                <input required type="text" name="consultationMaternite" defaultValue={editingMaternityRecord.consultationMaternite} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Caisse du Jour (FCFA) *</label>
+                <input required type="number" step="0.01" name="caisseDuJour" defaultValue={editingMaternityRecord.caisseDuJour} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Observation</label>
+                <input type="text" name="observation" defaultValue={editingMaternityRecord.observation} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
+              <button type="button" onClick={() => setEditingMaternityRecord(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded cursor-pointer">Annuler</button>
+              <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold cursor-pointer">Enregistrer les modifications</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* EDIT DISPENSARY RECORD MODAL */}
+      {editingDispensaryRecord && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleUpdateDispensaryRecord} className="bg-white rounded-xl w-full max-w-sm p-5 border text-xs space-y-3 animate-scale-in">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>✏️ Modifier Fiche Dispensaire</span>
+                <span className="font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">{editingDispensaryRecord.id}</span>
+              </h4>
+              <button type="button" onClick={() => setEditingDispensaryRecord(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
+            </div>
+
+            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Date *</label>
+                <input required type="date" name="date" defaultValue={editingDispensaryRecord.date} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">N° Dossier *</label>
+                <input required type="text" name="dossier" defaultValue={editingDispensaryRecord.dossier} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Infirmier de Garde *</label>
+                <input required type="text" name="infirmierGarde" defaultValue={editingDispensaryRecord.infirmierGarde} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Consultation Médicale *</label>
+                <input required type="text" name="consultationMedicale" defaultValue={editingDispensaryRecord.consultationMedicale} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Hospitalisation / Actes *</label>
+                <input required type="text" name="hospitalizationSoins" defaultValue={editingDispensaryRecord.hospitalizationSoins} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Caisse du Jour (FCFA) *</label>
+                <input required type="number" step="0.01" name="caisseDuJour" defaultValue={editingDispensaryRecord.caisseDuJour} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Observation</label>
+                <input type="text" name="observation" defaultValue={editingDispensaryRecord.observation} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
+              <button type="button" onClick={() => setEditingDispensaryRecord(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded cursor-pointer">Annuler</button>
+              <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold cursor-pointer">Enregistrer les modifications</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* EDIT LABORATORY RECORD MODAL */}
+      {editingLaboratoryRecord && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleUpdateLaboratoryRecord} className="bg-white rounded-xl w-full max-w-sm p-5 border text-xs space-y-3 animate-scale-in">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>✏️ Modifier Fiche Laboratoire</span>
+                <span className="font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">{editingLaboratoryRecord.id}</span>
+              </h4>
+              <button type="button" onClick={() => setEditingLaboratoryRecord(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
+            </div>
+
+            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Date *</label>
+                <input required type="date" name="date" defaultValue={editingLaboratoryRecord.date} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">N° Dossier *</label>
+                <input required type="text" name="dossier" defaultValue={editingLaboratoryRecord.dossier} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Technicien *</label>
+                <input required type="text" name="technician" defaultValue={editingLaboratoryRecord.technician} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Type d'Analyses *</label>
+                <input required type="text" name="testType" defaultValue={editingLaboratoryRecord.testType} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Caisse du Jour (FCFA) *</label>
+                <input required type="number" step="0.01" name="caisseDuJour" defaultValue={editingLaboratoryRecord.caisseDuJour} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Observation</label>
+                <input type="text" name="observation" defaultValue={editingLaboratoryRecord.observation} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
+              <button type="button" onClick={() => setEditingLaboratoryRecord(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded cursor-pointer">Annuler</button>
+              <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold cursor-pointer">Enregistrer les modifications</button>
             </div>
           </form>
         </div>
