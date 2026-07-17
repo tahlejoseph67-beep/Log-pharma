@@ -37,7 +37,9 @@ import {
   RefreshCw,
   Wallet,
   Download,
-  Check
+  Check,
+  FlaskConical,
+  Database
 } from 'lucide-react';
 
 import {
@@ -65,6 +67,7 @@ interface Medicine {
   expiryDate: string;
   location: string;
   requiresPrescription: boolean;
+  unit?: string;
 }
 
 interface Employee {
@@ -82,6 +85,7 @@ interface Employee {
   canRecordExpenses?: boolean;
   canAccessMaternity?: boolean;
   canAccessDispensary?: boolean;
+  canAccessLaboratory?: boolean;
 }
 
 interface Partner {
@@ -129,6 +133,22 @@ interface Sale {
   sellerName?: string;
   cashReceived?: string;
   changeReturned?: string;
+  status?: 'En attente' | 'Validée' | 'Annulée';
+  createdAt?: string;
+}
+
+interface LaboratoryRecord {
+  id: string;
+  date: string;
+  dossier: string;
+  technician: string;
+  testType: string;
+  caisseDuJour: number;
+  observation: string;
+  recordedBy: {
+    name: string;
+    role: string;
+  };
 }
 
 interface PharmacyInfo {
@@ -282,6 +302,29 @@ const INITIAL_DISPENSARY_RECORDS: DispensaryRecord[] = [
   }
 ];
 
+const INITIAL_LABORATORY_RECORDS: LaboratoryRecord[] = [
+  {
+    id: 'LAB-001',
+    date: '2026-07-10',
+    dossier: 'DOS-LAB-891',
+    technician: 'M. Jean-Claude Kouassi',
+    testType: 'Examen Cytobactériologique des Urines (ECBU) & Antibiogramme',
+    caisseDuJour: 15000,
+    observation: 'Présence de germes Escherichia coli. Rapport délivré.',
+    recordedBy: { name: 'Dr. Sophie Martin', role: 'Pharmacien Titulaire' }
+  },
+  {
+    id: 'LAB-002',
+    date: '2026-07-11',
+    dossier: 'DOS-LAB-912',
+    technician: 'Mme. Mariam Sidibé',
+    testType: 'Test Rapide d\'Orientation Diagnostique du Paludisme (Goutte Épaisse)',
+    caisseDuJour: 5000,
+    observation: 'Négatif pour Plasmodium falciparum.',
+    recordedBy: { name: 'Dr. Sophie Martin', role: 'Pharmacien Titulaire' }
+  }
+];
+
 // Initial datasets in clear French
 const INITIAL_MEDICINES: Medicine[] = [
   { id: '1', name: 'Paracétamol Biogaran 500mg', cip: '340093848206', category: 'Antalgique', buyingPrice: 0.95, sellingPrice: 2.15, quantity: 140, minAlertQty: 30, expiryDate: '2028-04-12', location: 'Rayon A-1', requiresPrescription: false },
@@ -379,6 +422,13 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_DISPENSARY_RECORDS;
   });
 
+  const [laboratoryRecords, setLaboratoryRecords] = useState<LaboratoryRecord[]>(() => {
+    const saved = localStorage.getItem('pharma_laboratory');
+    return saved ? JSON.parse(saved) : INITIAL_LABORATORY_RECORDS;
+  });
+
+  const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
+
   // State sync
   useEffect(() => { localStorage.setItem('pharma_medicines', JSON.stringify(medicines)); }, [medicines]);
   useEffect(() => { localStorage.setItem('pharma_employees', JSON.stringify(employees)); }, [employees]);
@@ -389,14 +439,32 @@ export default function App() {
   useEffect(() => { localStorage.setItem('pharma_expenses', JSON.stringify(expenses)); }, [expenses]);
   useEffect(() => { localStorage.setItem('pharma_maternity', JSON.stringify(maternityRecords)); }, [maternityRecords]);
   useEffect(() => { localStorage.setItem('pharma_dispensary', JSON.stringify(dispensaryRecords)); }, [dispensaryRecords]);
+  useEffect(() => { localStorage.setItem('pharma_laboratory', JSON.stringify(laboratoryRecords)); }, [laboratoryRecords]);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire' | 'laboratoire'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => localStorage.getItem('pharma_sidebar_collapsed') === 'true');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   useEffect(() => {
     localStorage.setItem('pharma_sidebar_collapsed', isSidebarCollapsed.toString());
   }, [isSidebarCollapsed]);
+
+  // Global afterprint listener to reset print preview triggers
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintMaternityReport(false);
+      setPrintDispensaryReport(false);
+      setPrintLaboratoryReport(false);
+      setPrintExpensesReport(false);
+      setPrintConcessionsReport(false);
+      setPrintData(null);
+      setPrintWithdrawMeds(null);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
   
   // States for Expenses
   const [expenseSubTab, setExpenseSubTab] = useState<'reports' | 'add' | 'validation'>('reports');
@@ -437,6 +505,23 @@ export default function App() {
   const [dispensaryFilterDate, setDispensaryFilterDate] = useState<string>('');
   const [printDispensaryReport, setPrintDispensaryReport] = useState<boolean>(false);
 
+  // States for Laboratory Accounting
+  const [laboratorySubTab, setLaboratorySubTab] = useState<'reports' | 'add'>('reports');
+  const [laboratoryDate, setLaboratoryDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [laboratoryDossier, setLaboratoryDossier] = useState<string>('');
+  const [laboratoryTechnician, setLaboratoryTechnician] = useState<string>('');
+  const [laboratoryTestType, setLaboratoryTestType] = useState<string>('');
+  const [laboratoryCaisseDuJour, setLaboratoryCaisseDuJour] = useState<string>('');
+  const [laboratoryObservation, setLaboratoryObservation] = useState<string>('');
+  const [laboratorySuccessMsg, setLaboratorySuccessMsg] = useState<string>('');
+  const [laboratoryErrorMsg, setLaboratoryErrorMsg] = useState<string>('');
+  const [laboratoryFilterDate, setLaboratoryFilterDate] = useState<string>('');
+  const [printLaboratoryReport, setPrintLaboratoryReport] = useState<boolean>(false);
+  const [printConcessionsReport, setPrintConcessionsReport] = useState<boolean>(false);
+
+  // Filter for sales history status
+  const [salesHistoryStatusFilter, setSalesHistoryStatusFilter] = useState<string>('all');
+
   const [currentTime, setCurrentTime] = useState<string>('');
 
   // Modals & form variables
@@ -444,6 +529,10 @@ export default function App() {
   const [showAddEmpModal, setShowAddEmpModal] = useState<boolean>(false);
   const [selectedRoleOption, setSelectedRoleOption] = useState<string>('Pharmacien Titulaire');
   const [customRoleText, setCustomRoleText] = useState<string>('');
+  const [addMedCategoryOption, setAddMedCategoryOption] = useState<string>('Antalgique');
+  const [addMedUnitOption, setAddMedUnitOption] = useState<string>('Boite');
+  const [editMedCategoryOption, setEditMedCategoryOption] = useState<string>('Antalgique');
+  const [editMedUnitOption, setEditMedUnitOption] = useState<string>('Boite');
   const [showAddPartnerModal, setShowAddPartnerModal] = useState<boolean>(false);
   const [showAddClientModal, setShowAddClientModal] = useState<boolean>(false);
   
@@ -558,6 +647,31 @@ export default function App() {
     }, 200);
   };
 
+  const handlePrintLaboratoryReport = () => {
+    setPrintLaboratoryReport(true);
+    setPrintDispensaryReport(false);
+    setPrintMaternityReport(false);
+    setPrintExpensesReport(false);
+    setPrintData(null);
+    setPrintWithdrawMeds(null);
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  const handlePrintConcessionsReport = () => {
+    setPrintConcessionsReport(true);
+    setPrintLaboratoryReport(false);
+    setPrintDispensaryReport(false);
+    setPrintMaternityReport(false);
+    setPrintExpensesReport(false);
+    setPrintData(null);
+    setPrintWithdrawMeds(null);
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
   const submitMaternityRecord = (e: React.FormEvent) => {
     e.preventDefault();
     playBeep();
@@ -644,6 +758,207 @@ export default function App() {
     setDispensaryInfirmierGarde('');
     setDispensaryCaisseDuJour('');
     setDispensaryObservation('');
+  };
+
+  const submitLaboratoryRecord = (e: React.FormEvent) => {
+    e.preventDefault();
+    playBeep();
+    setLaboratorySuccessMsg('');
+    setLaboratoryErrorMsg('');
+
+    if (!laboratoryDate || !laboratoryDossier || !laboratoryTechnician || !laboratoryTestType || !laboratoryCaisseDuJour) {
+      setLaboratoryErrorMsg('Veuillez remplir tous les champs obligatoires (*).');
+      return;
+    }
+
+    const amount = parseFloat(laboratoryCaisseDuJour);
+    if (isNaN(amount) || amount < 0) {
+      setLaboratoryErrorMsg('La caisse du jour doit être un nombre positif.');
+      return;
+    }
+
+    const newRecord: LaboratoryRecord = {
+      id: `LAB-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: laboratoryDate,
+      dossier: laboratoryDossier,
+      technician: laboratoryTechnician,
+      testType: laboratoryTestType,
+      caisseDuJour: amount,
+      observation: laboratoryObservation || 'R.A.S.',
+      recordedBy: {
+        name: currentUser?.name || 'Inconnu',
+        role: currentUser?.role || 'Personnel'
+      }
+    };
+
+    setLaboratoryRecords(prev => [newRecord, ...prev]);
+    setLaboratorySuccessMsg('Données de laboratoire enregistrées avec succès.');
+
+    setLaboratoryDossier('');
+    setLaboratoryTechnician('');
+    setLaboratoryTestType('');
+    setLaboratoryCaisseDuJour('');
+    setLaboratoryObservation('');
+  };
+
+  const handleDownloadConcessionsPDF = () => {
+    playBeep();
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(4, 120, 87); // Emerald-700
+    doc.text(pharmacyInfo.companyName, 14, 20);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(pharmacyInfo.pharmacyName, 14, 25);
+    doc.text(pharmacyInfo.address, 14, 30);
+    doc.text(`Tél : ${pharmacyInfo.phone} | Email : ${pharmacyInfo.email}`, 14, 35);
+    
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(30);
+    doc.text("HISTORIQUE DES VENTES & TRAÇABILITÉ DES CONCESSIONS", 14, 48);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 14, 53);
+    doc.text(`Auteur du rapport : ${currentUser?.name || 'Administrateur'} (${currentUser?.role || 'Comptable'})`, 14, 58);
+    
+    // Period & Totals
+    const totalCa = filteredSales.reduce((sum, s) => sum + parseFloat(s.totalPaid), 0);
+    const totalMeds = filteredSales.reduce((sum, s) => sum + s.items.reduce((acc, it) => acc + it.quantity, 0), 0);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+    doc.text(`Chiffre d'affaires total : ${totalCa.toFixed(2)} FCFA`, 14, 68);
+    doc.text(`Total transactions : ${filteredSales.length} fiches | Produits délivrés : ${totalMeds} boîtes`, 14, 74);
+    
+    // Table columns
+    const columns = [
+      { header: 'Réf Vente', dataKey: 'id' },
+      { header: 'Statut', dataKey: 'status' },
+      { header: 'Date', dataKey: 'date' },
+      { header: 'Vendeur / Collaborateur', dataKey: 'seller' },
+      { header: 'Patient / Client', dataKey: 'client' },
+      { header: 'Tiers Payant', dataKey: 'tiers' },
+      { header: 'Médicaments Dispensés', dataKey: 'meds' },
+      { header: 'Total Payé', dataKey: 'total' }
+    ];
+    
+    const rows = filteredSales.map(s => ({
+      id: s.id,
+      status: s.status || 'En attente',
+      date: new Date(s.date).toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      seller: s.sellerName || 'Collaborateur',
+      client: s.clientName || 'Client de Passage',
+      tiers: s.prescriptionAttached ? 'SESAM-Vitale' : 'Auto',
+      meds: s.items.map(it => `${it.name} (x${it.quantity})`).join(', '),
+      total: `${parseFloat(s.totalPaid).toFixed(2)} FCFA`
+    }));
+    
+    autoTable(doc, {
+      startY: 82,
+      columns: columns,
+      body: rows,
+      theme: 'striped',
+      headStyles: { fillColor: [4, 120, 87] },
+      styles: { fontSize: 7.5 },
+      columnStyles: {
+        meds: { cellWidth: 70 },
+        client: { cellWidth: 35 },
+        seller: { cellWidth: 35 }
+      }
+    });
+    
+    doc.save(`rapport_concessions_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const handleDownloadLaboratoryPDF = () => {
+    playBeep();
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(4, 120, 87); // Emerald color
+    doc.text(pharmacyInfo.companyName, 14, 20);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(pharmacyInfo.pharmacyName, 14, 25);
+    doc.text(pharmacyInfo.address, 14, 30);
+    doc.text(`Tél : ${pharmacyInfo.phone} | Email : ${pharmacyInfo.email}`, 14, 35);
+    
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(30);
+    doc.text("RAPPORT JOURNALIER LABORATOIRE", 14, 48);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 14, 53);
+    doc.text(`Auteur du rapport : ${currentUser?.name || 'Administrateur'} (${currentUser?.role || 'Comptable'})`, 14, 58);
+    
+    // Period & Totals
+    const filteredRecords = laboratoryRecords.filter(r => !laboratoryFilterDate || r.date === laboratoryFilterDate);
+    const totalCaisse = filteredRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+    const periodStr = laboratoryFilterDate ? `Activité du ${new Date(laboratoryFilterDate).toLocaleDateString('fr-FR')}` : 'Historique complet des écritures';
+    doc.text(`Période : ${periodStr}`, 14, 68);
+    doc.text(`Recettes Caisse Laboratoire : ${totalCaisse.toFixed(2)} FCFA`, 14, 74);
+    
+    // Table columns
+    const columns = [
+      { header: 'Réf', dataKey: 'id' },
+      { header: 'Date', dataKey: 'date' },
+      { header: 'Dossier', dataKey: 'dossier' },
+      { header: 'Technicien(ne)', dataKey: 'technician' },
+      { header: 'Examens / Analyses', dataKey: 'testType' },
+      { header: 'Caisse du Jour', dataKey: 'caisseDuJour' },
+      { header: 'Observation', dataKey: 'observation' }
+    ];
+    
+    const rows = filteredRecords.map(r => ({
+      id: r.id,
+      date: new Date(r.date).toLocaleDateString('fr-FR'),
+      dossier: r.dossier,
+      technician: r.technician,
+      testType: r.testType,
+      caisseDuJour: `${r.caisseDuJour.toFixed(2)} FCFA`,
+      observation: r.observation
+    }));
+    
+    autoTable(doc, {
+      startY: 82,
+      columns: columns,
+      body: rows,
+      theme: 'striped',
+      headStyles: { fillColor: [4, 120, 87] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        testType: { cellWidth: 40 },
+        observation: { cellWidth: 35 }
+      }
+    });
+    
+    doc.save(`rapport_laboratoire_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const handleDownloadExpensesPDF = () => {
@@ -1129,7 +1444,10 @@ export default function App() {
       setClients([]);
       setPartners([]);
       setExpenses([]);
-      setResetSuccessMsg("Toutes les données de stocks, de ventes, de clients, de dépenses et de laboratoires fournisseurs ont été entièrement vidées pour une nouvelle utilisation !");
+      setMaternityRecords([]);
+      setDispensaryRecords([]);
+      setLaboratoryRecords([]);
+      setResetSuccessMsg("Toutes les données de stocks, de ventes, de clients, de dépenses, de maternité, de dispensaire et de laboratoires ont été entièrement vidées pour une nouvelle utilisation !");
     } else {
       // Réinitialiser aux données initiales de démonstration
       setMedicines(INITIAL_MEDICINES);
@@ -1138,6 +1456,9 @@ export default function App() {
       setPartners(INITIAL_PARTNERS);
       setPharmacyInfo(INITIAL_PHARMACY_INFO);
       setExpenses(INITIAL_EXPENSES);
+      setMaternityRecords(INITIAL_MATERNITY_RECORDS);
+      setDispensaryRecords(INITIAL_DISPENSARY_RECORDS);
+      setLaboratoryRecords(INITIAL_LABORATORY_RECORDS);
       setResetSuccessMsg("Le système a été réinitialisé avec succès avec les données de démonstration d'usine !");
     }
     // Jouer le bip de succès et réinitialiser les états
@@ -1204,12 +1525,16 @@ export default function App() {
       const emp = employees.find(e => e.id === currentUser?.id);
       const isMaternityAuth = isAdmin || !!emp?.canAccessMaternity;
       const isDispensaryAuth = isAdmin || !!emp?.canAccessDispensary;
+      const isLaboratoryAuth = isAdmin || !!emp?.canAccessLaboratory;
       
       if (isMaternityAuth && !allowed.includes('maternite')) {
         allowed.push('maternite');
       }
       if (isDispensaryAuth && !allowed.includes('dispensaire')) {
         allowed.push('dispensaire');
+      }
+      if (isLaboratoryAuth && !allowed.includes('laboratoire')) {
+        allowed.push('laboratoire');
       }
 
       const isAllowed = allowed.includes(activeTab);
@@ -1283,6 +1608,32 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // 5-minute sales auto-validation effect
+  useEffect(() => {
+    const checkSales = () => {
+      let changed = false;
+      const now = Date.now();
+      const updatedSales = sales.map(s => {
+        const currentStatus = s.status || 'En attente';
+        if (currentStatus === 'En attente') {
+          const createdTime = s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.date).getTime();
+          const diffMin = (now - createdTime) / 60000;
+          if (diffMin >= 5) {
+            changed = true;
+            return { ...s, status: 'Validée' as const };
+          }
+        }
+        return s;
+      });
+      if (changed) {
+        setSales(updatedSales);
+      }
+    };
+    checkSales();
+    const timer = setInterval(checkSales, 15000);
+    return () => clearInterval(timer);
+  }, [sales]);
+
   // Compute metrics
   const stockValueVal = medicines.reduce((sum, med) => sum + (med.quantity * med.sellingPrice), 0);
   const lowStockItems = medicines.filter(med => med.quantity <= med.minAlertQty);
@@ -1330,9 +1681,13 @@ export default function App() {
         const matchesMed = s.items.some(it => it.name.toLowerCase().includes(q));
         if (!matchesRef && !matchesClient && !matchesMed) return false;
       }
+      if (salesHistoryStatusFilter !== 'all') {
+        const currentStatus = s.status || 'En attente';
+        if (currentStatus !== salesHistoryStatusFilter) return false;
+      }
       return true;
     });
-  }, [sales, historyStartDate, historyEndDate, historySellerId, historySearchQuery, employees]);
+  }, [sales, historyStartDate, historyEndDate, historySellerId, historySearchQuery, employees, salesHistoryStatusFilter]);
 
   const activeStaff = employees.filter(emp => emp.status === 'Présent' && !emp.suspended).length;
   const todaySalesVal = sales
@@ -1463,6 +1818,8 @@ export default function App() {
       sellerName: currentUser?.name || "Collaborateur",
       cashReceived: cashReceived !== undefined ? cashReceived.toFixed(2) : undefined,
       changeReturned: changeReturned !== undefined ? changeReturned.toFixed(2) : undefined,
+      status: 'En attente',
+      createdAt: new Date().toISOString(),
     };
 
     // Stock deduction & client loyalty increment
@@ -1500,21 +1857,58 @@ export default function App() {
   const submitMedicine = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
+    const catOption = data.get('categoryOption') as string;
+    const finalCategory = catOption === 'Autre' ? (data.get('customCategoryText') as string || 'Autre').trim() : catOption;
+    
+    const unitOption = data.get('unitOption') as string;
+    const finalUnit = unitOption === 'Autre' ? (data.get('customUnitText') as string || 'Boite').trim() : unitOption;
+
     const newMed: Medicine = {
       id: `med-${Date.now()}`,
       name: data.get('name') as string,
       cip: (data.get('cip') as string) || Math.floor(340090000000 + Math.random() * 999999).toString(),
-      category: data.get('category') as string,
+      category: finalCategory,
       buyingPrice: parseFloat(data.get('buyingPrice') as string) || 1.00,
       sellingPrice: parseFloat(data.get('sellingPrice') as string) || 2.50,
       quantity: parseInt(data.get('quantity') as string) || 20,
       minAlertQty: parseInt(data.get('minAlertQty') as string) || 10,
       expiryDate: data.get('expiryDate') as string || '2028-01-01',
       location: data.get('location') as string || 'Contoir principal',
-      requiresPrescription: data.get('requiresPrescription') === 'true'
+      requiresPrescription: data.get('requiresPrescription') === 'true',
+      unit: finalUnit
     };
     setMedicines([newMed, ...medicines]);
     setShowAddMedModal(false);
+  };
+
+  const handleUpdateMedicine = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingMedicine) return;
+    const data = new FormData(e.currentTarget);
+    const catOption = data.get('categoryOption') as string;
+    const finalCategory = catOption === 'Autre' ? (data.get('customCategoryText') as string || 'Autre').trim() : catOption;
+    
+    const unitOption = data.get('unitOption') as string;
+    const finalUnit = unitOption === 'Autre' ? (data.get('customUnitText') as string || 'Boite').trim() : unitOption;
+
+    const updatedMed: Medicine = {
+      ...editingMedicine,
+      name: data.get('name') as string,
+      cip: data.get('cip') as string,
+      category: finalCategory,
+      buyingPrice: parseFloat(data.get('buyingPrice') as string) || 0.00,
+      sellingPrice: parseFloat(data.get('sellingPrice') as string) || 0.00,
+      quantity: parseInt(data.get('quantity') as string) || 0,
+      minAlertQty: parseInt(data.get('minAlertQty') as string) || 0,
+      expiryDate: data.get('expiryDate') as string,
+      location: data.get('location') as string,
+      requiresPrescription: data.get('requiresPrescription') === 'true',
+      unit: finalUnit
+    };
+
+    setMedicines(prev => prev.map(m => m.id === editingMedicine.id ? updatedMed : m));
+    setEditingMedicine(null);
+    playBeep();
   };
 
   const handleAdminLogin = (e: React.FormEvent<HTMLFormElement>) => {
@@ -1528,6 +1922,59 @@ export default function App() {
       playBeep();
     } else {
       setAdminLoginError('Identifiants incorrects.');
+    }
+  };
+
+  const handleBackupDatabase = () => {
+    playBeep();
+    const dbData = {
+      medicines,
+      employees,
+      partners,
+      clients,
+      sales,
+      pharmacyInfo,
+      expenses,
+      maternityRecords,
+      dispensaryRecords,
+      laboratoryRecords
+    };
+    
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dbData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    const dateStr = new Date().toISOString().split('T')[0];
+    downloadAnchor.setAttribute("download", `logpharma_sauvegarde_${dateStr}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  const handleRestoreDatabase = (e: React.ChangeEvent<HTMLInputElement>) => {
+    playBeep();
+    const fileReader = new FileReader();
+    if (e.target.files && e.target.files[0]) {
+      fileReader.readAsText(e.target.files[0], "UTF-8");
+      fileReader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target?.result as string);
+          
+          if (parsed.medicines) setMedicines(parsed.medicines);
+          if (parsed.employees) setEmployees(parsed.employees);
+          if (parsed.partners) setPartners(parsed.partners);
+          if (parsed.clients) setClients(parsed.clients);
+          if (parsed.sales) setSales(parsed.sales);
+          if (parsed.pharmacyInfo) setPharmacyInfo(parsed.pharmacyInfo);
+          if (parsed.expenses) setExpenses(parsed.expenses);
+          if (parsed.maternityRecords) setMaternityRecords(parsed.maternityRecords);
+          if (parsed.dispensaryRecords) setDispensaryRecords(parsed.dispensaryRecords);
+          if (parsed.laboratoryRecords) setLaboratoryRecords(parsed.laboratoryRecords);
+          
+          alert("Base de données restaurée avec succès !");
+        } catch (error) {
+          alert("Erreur lors de la lecture du fichier de sauvegarde. Assurez-vous qu'il s'agit d'un fichier JSON de sauvegarde valide.");
+        }
+      };
     }
   };
 
@@ -1591,6 +2038,9 @@ export default function App() {
   } else if (activeTab === 'dispensaire') {
     const emp = employees.find(e => e.id === currentUser?.id);
     isTabAuthorized = isAdmin || !!emp?.canAccessDispensary;
+  } else if (activeTab === 'laboratoire') {
+    const emp = employees.find(e => e.id === currentUser?.id);
+    isTabAuthorized = isAdmin || !!emp?.canAccessLaboratory;
   } else {
     isTabAuthorized = !!allowedTabsForRoles[userRole]?.includes(activeTab);
   }
@@ -1801,6 +2251,7 @@ export default function App() {
                 { id: 'depenses', label: 'Gestion des Dépenses', icon: Wallet, roles: ['Admin', 'Pharmacien Titulaire', 'Pharmacien Adjoint', 'Préparateur', 'Stagiaire', 'Conseiller'] },
                 { id: 'maternite', label: 'Compta Maternité', icon: Heart, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessMaternity },
                 { id: 'dispensaire', label: 'Compta Dispensaire', icon: Activity, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessDispensary },
+                { id: 'laboratoire', label: 'Compta Laboratoire', icon: FlaskConical, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessLaboratory },
               ].filter(tab => !currentUser || tab.roles.includes(currentUser.role) || tab.forceShow).map((tab) => {
                 const Icon = tab.icon;
                 const statusActive = activeTab === tab.id;
@@ -2478,6 +2929,37 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Sauvegarde & Restauration de la Base de Données */}
+                <div className="bg-slate-950 border border-slate-800 p-4.5 rounded-xl space-y-3">
+                  <h4 className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                    <Database size={14} className="text-emerald-400" />
+                    <span>Sauvegarde & Restauration de la Base de Données</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    Téléchargez une copie complète au format JSON contenant tout l'historique de stock, de personnel, de ventes, de dépenses et de registres cliniques, ou restaurez un fichier précédemment exporté.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 pt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={handleBackupDatabase}
+                      className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[10px] uppercase tracking-wider py-2.5 rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5"
+                    >
+                      <Download size={12} />
+                      <span>Exporter une Sauvegarde (JSON)</span>
+                    </button>
+                    
+                    <label className="flex-1 bg-slate-800 hover:bg-slate-750 text-slate-200 font-extrabold text-[10px] uppercase tracking-wider py-2.5 rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 relative">
+                      <input 
+                        type="file" 
+                        accept=".json" 
+                        onChange={handleRestoreDatabase} 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                      />
+                      <span>📥 Importer & Restaurer un Fichier</span>
+                    </label>
+                  </div>
+                </div>
+
                 {/* Personnalisation des informations d'officine */}
                 <div className="bg-slate-950 border border-slate-800 p-5 rounded-xl mt-4 space-y-4">
                   <div className="flex items-center gap-2 pb-2 border-b border-slate-900">
@@ -2867,18 +3349,19 @@ export default function App() {
                           <td className="p-3 text-right font-mono font-bold text-emerald-800">{m.sellingPrice.toFixed(2)} FCFA</td>
                           <td className="p-3 text-center font-mono">{m.expiryDate}</td>
                           <td className="p-3">{m.location}</td>
-                          <td className="p-3 text-right">
+                          <td className="p-3 text-right space-x-2">
                             <button 
                               onClick={() => {
-                                const newS = prompt(`Nouveau prix de vente TTC pour ${m.name}:`, m.sellingPrice.toString());
-                                if (newS) {
-                                  const parsed = parseFloat(newS);
-                                  if (!isNaN(parsed)) setMedicines(medicines.map(item => item.id === m.id ? { ...item, sellingPrice: parsed } : item));
-                                }
+                                playBeep();
+                                setEditingMedicine(m);
+                                const isStandardCat = ['Antalgique','Antibiotique','Anti-inflammatoire','Rhume / Grippe','Cardiologie'].includes(m.category);
+                                setEditMedCategoryOption(isStandardCat ? m.category : 'Autre');
+                                const isStandardUnit = ['Boite', 'Flacon', 'Tube', 'Plaquette', 'Ampoule', 'Sachet'].includes(m.unit);
+                                setEditMedUnitOption(isStandardUnit ? m.unit : 'Autre');
                               }}
-                              className="text-emerald-700 hover:underline font-bold"
+                              className="text-emerald-700 hover:text-emerald-900 font-bold bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded"
                             >
-                              Éditer
+                              ✏️ Modifier
                             </button>
                           </td>
                         </tr>
@@ -3110,6 +3593,29 @@ export default function App() {
                             />
                             <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-emerald-600"></div>
                             <span className="ml-1.5 text-[10px] font-bold text-slate-700">{emp.canAccessDispensary ? "Oui" : "Non"}</span>
+                          </label>
+                        </div>
+                      )}
+
+                      {/* Accès Compta Laboratoire authorization toggle for Admin */}
+                      {isAdmin && emp.role !== 'Admin' && emp.role !== 'Pharmacien Titulaire' && !isSuspended && (
+                        <div className="flex justify-between items-center border-t border-slate-100/60 pt-2 sm:min-h-[24px]">
+                          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            <FlaskConical size={11} className="text-slate-400" />
+                            <span>Compta Laboratoire :</span>
+                          </span>
+                          <label className="relative inline-flex items-center cursor-pointer select-none">
+                            <input 
+                              type="checkbox" 
+                              checked={!!emp.canAccessLaboratory} 
+                              onChange={(e) => {
+                                playBeep();
+                                setEmployees(employees.map(x => x.id === emp.id ? { ...x, canAccessLaboratory: e.target.checked } : x));
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-emerald-600"></div>
+                            <span className="ml-1.5 text-[10px] font-bold text-slate-700">{emp.canAccessLaboratory ? "Oui" : "Non"}</span>
                           </label>
                         </div>
                       )}
@@ -4325,6 +4831,311 @@ export default function App() {
             </div>
           );
         })()}
+
+        {/* --- TABS 10: COMPTABILITÉ LABORATOIRE --- */}
+        {activeTab === 'laboratoire' && (() => {
+          const currentEmployee = employees.find(emp => emp.id === currentUser?.id);
+          const hasAccess = isAdmin || !!currentEmployee?.canAccessLaboratory;
+
+          if (!hasAccess) {
+            return (
+              <div className="bg-white rounded-xl p-8 border border-slate-100 text-center space-y-3">
+                <div className="mx-auto w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 font-bold text-lg">⚠️</div>
+                <h4 className="font-bold text-slate-800 text-sm">Accès Refusé • Habilitation Requise</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Votre profil d'employé ne dispose pas de l'autorisation nécessaire pour accéder aux rapports et saisies de comptabilité du laboratoire. 
+                  Veuillez contacter l'administrateur ou le pharmacien titulaire de l'officine pour solliciter cette habilitation.
+                </p>
+              </div>
+            );
+          }
+
+          // Filtering records by date
+          const filteredRecords = laboratoryRecords.filter(r => {
+            if (laboratoryFilterDate && r.date !== laboratoryFilterDate) return false;
+            return true;
+          });
+
+          const totalCaisse = filteredRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
+
+          // Get most active technician
+          const techs = filteredRecords.map(r => r.technician);
+          let topTech = 'Néant';
+          if (techs.length > 0) {
+            const counts = techs.reduce((acc, name) => {
+              acc[name] = (acc[name] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>);
+            topTech = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+          }
+
+          return (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h3 className="text-sm font-bold block text-slate-900">🔬 Comptabilité & Registre du Laboratoire</h3>
+                  <p className="text-xs text-slate-400">Suivi comptable des examens biologiques, analyses et actes médicaux du laboratoire.</p>
+                </div>
+
+                <div className="flex border-b border-slate-100 text-xs font-semibold select-none w-full md:w-auto overflow-x-auto gap-2">
+                  <button 
+                    onClick={() => { playBeep(); setLaboratorySubTab('reports'); }}
+                    className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer ${
+                      laboratorySubTab === 'reports' 
+                        ? 'border-emerald-600 text-emerald-700' 
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    📊 Analyse & Rapports
+                  </button>
+                  <button 
+                    onClick={() => { playBeep(); setLaboratorySubTab('add'); }}
+                    className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer ${
+                      laboratorySubTab === 'add' 
+                        ? 'border-emerald-600 text-emerald-700' 
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    📝 Enregistrer une Saisie
+                  </button>
+                </div>
+              </div>
+
+              {laboratorySubTab === 'reports' && (
+                <div className="space-y-6">
+                  {/* Bento Metrics */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="bg-slate-900 text-white rounded-xl p-5 shadow-xs relative overflow-hidden">
+                      <div className="absolute right-0 bottom-0 translate-y-1/4 translate-x-1/4 opacity-10">
+                        <Wallet size={120} />
+                      </div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-300">Caisse Cumulée Laboratoire</p>
+                      <h4 className="text-2xl font-black mt-2">{totalCaisse.toFixed(2)} FCFA</h4>
+                      <p className="text-[10px] text-slate-300/75 mt-1">Total calculé sur la période filtrée</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-xs">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 font-bold">Activité Analyses</p>
+                      <h4 className="text-2xl font-black text-slate-900 mt-2">{filteredRecords.length} fiches</h4>
+                      <p className="text-[10px] text-slate-400 mt-1">Nombre d'examens biologiques saisis</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-xs">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 font-bold">Technicien Référent</p>
+                      <h4 className="text-xl font-black text-emerald-800 mt-2 truncate" title={topTech}>{topTech}</h4>
+                      <p className="text-[10px] text-slate-400 mt-1">Le praticien de garde le plus sollicité</p>
+                    </div>
+                  </div>
+
+                  {/* Date Filter & Print / PDF download */}
+                  <div className="bg-white rounded-xl p-4 border border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <label className="text-slate-500 font-bold">Sélectionner une Date :</label>
+                      <input 
+                        type="date"
+                        value={laboratoryFilterDate}
+                        onChange={(e) => setLaboratoryFilterDate(e.target.value)}
+                        className="bg-slate-50 border p-1.5 rounded text-slate-700 font-semibold focus:outline-emerald-600"
+                      />
+                      {laboratoryFilterDate && (
+                        <button 
+                          onClick={() => setLaboratoryFilterDate('')}
+                          className="text-rose-600 hover:text-rose-800 font-bold ml-1.5 cursor-pointer"
+                        >
+                          Effacer filtre
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button 
+                        onClick={() => { playBeep(); handlePrintLaboratoryReport(); }}
+                        className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                      >
+                        🖨️ Imprimer Rapport Labo
+                      </button>
+                      <button 
+                        onClick={handleDownloadLaboratoryPDF}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-extrabold py-1.5 px-4 rounded cursor-pointer transition-all shadow-xs text-xs"
+                      >
+                        <Download size={13} />
+                        <span>Télécharger PDF</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Records Table */}
+                  <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-xs">
+                    <div className="p-4 border-b bg-slate-50">
+                      <h4 className="font-bold text-xs text-slate-800">Registre Comptable du Laboratoire d'Analyses</h4>
+                    </div>
+                    <div className="overflow-x-auto text-xs">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="border-b bg-slate-50/50 text-slate-400 font-bold uppercase py-2.5">
+                            <th className="p-3">Réf</th>
+                            <th className="p-3">Date</th>
+                            <th className="p-3">N° Dossier</th>
+                            <th className="p-3">Praticien / Tech</th>
+                            <th className="p-3">Type d'Examens / Analyses</th>
+                            <th className="p-3 text-right">Caisse du Jour</th>
+                            <th className="p-3">Observation</th>
+                            <th className="p-3">Saisi par</th>
+                            <th className="p-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y text-slate-700">
+                          {filteredRecords.length === 0 ? (
+                            <tr>
+                              <td colSpan={9} className="p-8 text-center text-slate-400 italic font-medium">
+                                Aucun enregistrement de laboratoire ne correspond à la date sélectionnée.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredRecords.map(rec => (
+                              <tr key={rec.id} className="hover:bg-slate-50/50">
+                                <td className="p-3 font-mono font-bold text-emerald-800">{rec.id}</td>
+                                <td className="p-3 font-semibold">{new Date(rec.date).toLocaleDateString('fr-FR')}</td>
+                                <td className="p-3 font-mono text-slate-600 font-bold">{rec.dossier}</td>
+                                <td className="p-3 font-bold text-slate-850">{rec.technician}</td>
+                                <td className="p-3 max-w-xs truncate" title={rec.testType}>{rec.testType}</td>
+                                <td className="p-3 font-black text-slate-900 text-right">{rec.caisseDuJour.toFixed(2)} FCFA</td>
+                                <td className="p-3 text-slate-500 italic max-w-xs truncate" title={rec.observation}>{rec.observation}</td>
+                                <td className="p-3">
+                                  <span className="block font-bold text-slate-800">{rec.recordedBy.name}</span>
+                                  <span className="text-[10px] text-slate-400">{rec.recordedBy.role}</span>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <button 
+                                    onClick={() => {
+                                      if (confirm(`Voulez-vous vraiment supprimer la fiche de laboratoire ${rec.id} ?`)) {
+                                        playBeep();
+                                        setLaboratoryRecords(prev => prev.filter(r => r.id !== rec.id));
+                                      }
+                                    }}
+                                    className="text-rose-600 hover:text-rose-900 hover:bg-rose-50 p-1.5 rounded-lg transition-colors cursor-pointer select-none"
+                                    title="Supprimer la fiche"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {laboratorySubTab === 'add' && (
+                <div className="bg-white rounded-xl p-6 border border-slate-100 shadow-xs max-w-3xl mx-auto space-y-4">
+                  <div className="border-b pb-2">
+                    <h4 className="font-bold text-sm text-slate-900">Formulaire de Saisie - Caisse du Laboratoire</h4>
+                    <p className="text-[11px] text-slate-400">Renseignez fidèlement les indicateurs de facturation et types d'analyses du laboratoire.</p>
+                  </div>
+
+                  {laboratorySuccessMsg && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded p-3 text-xs font-bold">
+                      ✅ {laboratorySuccessMsg}
+                    </div>
+                  )}
+
+                  {laboratoryErrorMsg && (
+                    <div className="bg-red-50 border border-red-200 text-red-800 rounded p-3 text-xs font-bold">
+                      ⚠️ {laboratoryErrorMsg}
+                    </div>
+                  )}
+
+                  <form onSubmit={submitLaboratoryRecord} className="space-y-4 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-slate-500 font-bold">Date de l'Activité *</label>
+                        <input 
+                          required
+                          type="date" 
+                          value={laboratoryDate} 
+                          onChange={(e) => setLaboratoryDate(e.target.value)}
+                          className="w-full bg-slate-50 border p-2 rounded text-slate-800 font-semibold focus:outline-emerald-600" 
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-500 font-bold">Numéro de Dossier laboratoire *</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="Ex : DOS-LAB-204"
+                          value={laboratoryDossier} 
+                          onChange={(e) => setLaboratoryDossier(e.target.value)}
+                          className="w-full bg-slate-50 border p-2 rounded text-slate-800 font-semibold focus:outline-emerald-600" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-slate-500 font-bold">Technicien(ne) en charge *</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="Ex : Dr. Amadou Konaté"
+                          value={laboratoryTechnician} 
+                          onChange={(e) => setLaboratoryTechnician(e.target.value)}
+                          className="w-full bg-slate-50 border p-2 rounded text-slate-800 font-semibold focus:outline-emerald-600" 
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-500 font-bold">Caisse du jour (FCFA TTC) *</label>
+                        <input 
+                          required
+                          type="number" 
+                          step="0.01" 
+                          placeholder="0.00"
+                          value={laboratoryCaisseDuJour} 
+                          onChange={(e) => setLaboratoryCaisseDuJour(e.target.value)}
+                          className="w-full bg-slate-50 border p-2 rounded font-extrabold text-slate-800 focus:outline-emerald-600" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-slate-500 font-bold">Type d'Examens / Analyses biologiques *</label>
+                      <input 
+                        required
+                        type="text"
+                        placeholder="Ex : NFS (Numération Formule Sanguine), Glycémie à jeun, Widal, Test Palu"
+                        value={laboratoryTestType} 
+                        onChange={(e) => setLaboratoryTestType(e.target.value)}
+                        className="w-full bg-slate-50 border p-2 rounded text-slate-800 focus:outline-emerald-600" 
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-slate-500 font-bold">Observation / Notes du Laboratoire</label>
+                      <input 
+                        type="text" 
+                        placeholder="Ex : RAS, résultats remis sous 24h, urgent..."
+                        value={laboratoryObservation} 
+                        onChange={(e) => setLaboratoryObservation(e.target.value)}
+                        className="w-full bg-slate-50 border p-2 rounded text-slate-800 focus:outline-emerald-600" 
+                      />
+                    </div>
+
+                    <button 
+                      type="submit"
+                      className="w-full bg-emerald-700 hover:bg-emerald-950 text-white font-extrabold py-2 px-4 rounded text-xs tracking-wider transition-all shadow-xs cursor-pointer select-none uppercase"
+                    >
+                      💾 Enregistrer les données du Laboratoire
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+          );
+        })()}
           </>
         )}
 
@@ -4359,16 +5170,29 @@ export default function App() {
                 <input type="text" name="cip" className="w-full bg-slate-50 border p-2 rounded" placeholder="34009..." />
               </div>
               <div>
-                <label className="block text-slate-500 font-bold">Catégorie</label>
-                <select name="category" className="w-full bg-slate-50 border p-2 rounded">
+                <label className="block text-slate-500 font-bold">Catégorie *</label>
+                <select 
+                  name="categoryOption" 
+                  value={addMedCategoryOption} 
+                  onChange={(e) => setAddMedCategoryOption(e.target.value)} 
+                  className="w-full bg-slate-50 border p-2 rounded"
+                >
                   <option value="Antalgique">Antalgique</option>
                   <option value="Antibiotique">Antibiotique</option>
                   <option value="Anti-inflammatoire">Anti-inflammatoire</option>
                   <option value="Rhume / Grippe">Rhume / Grippe</option>
                   <option value="Cardiologie">Cardiologie</option>
+                  <option value="Autre">Autre (Saisir manuellement)...</option>
                 </select>
               </div>
             </div>
+
+            {addMedCategoryOption === 'Autre' && (
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Saisir la catégorie personnalisée *</label>
+                <input required type="text" name="customCategoryText" className="w-full bg-slate-50 border p-2 rounded" placeholder="Ex: Ophtalmologie, Sirop, etc." />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -4387,33 +5211,178 @@ export default function App() {
                 <input required type="number" name="quantity" className="w-full bg-slate-50 border p-2 rounded" placeholder="100" />
               </div>
               <div>
+                <label className="block text-slate-500 font-bold">Unité de quantité *</label>
+                <select 
+                  name="unitOption" 
+                  value={addMedUnitOption} 
+                  onChange={(e) => setAddMedUnitOption(e.target.value)} 
+                  className="w-full bg-slate-50 border p-2 rounded"
+                >
+                  <option value="Boite">Boîte</option>
+                  <option value="Flacon">Flacon</option>
+                  <option value="Plaquette">Plaquette</option>
+                  <option value="Ampoule">Ampoule</option>
+                  <option value="Tube">Tube</option>
+                  <option value="Autre">Autre (Saisir manuellement)...</option>
+                </select>
+              </div>
+            </div>
+
+            {addMedUnitOption === 'Autre' && (
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Saisir l'unité personnalisée *</label>
+                <input required type="text" name="customUnitText" className="w-full bg-slate-50 border p-2 rounded" placeholder="Ex: Sachet, Ampoule, etc." />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
                 <label className="block text-slate-500 font-bold">Seuil Alerte Min *</label>
                 <input required type="number" name="minAlertQty" className="w-full bg-slate-50 border p-2 rounded" defaultValue="15" />
+              </div>
+              <div>
+                <label className="block text-slate-500 font-bold">Expiration *</label>
+                <input required type="date" name="expiryDate" className="w-full bg-slate-50 border p-2 rounded" defaultValue="2027-12-31" />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-slate-500 font-bold">Expiration *</label>
-                <input required type="date" name="expiryDate" className="w-full bg-slate-50 border p-2 rounded" defaultValue="2027-12-31" />
-              </div>
-              <div>
                 <label className="block text-slate-500 font-bold">Emplacement *</label>
                 <input required type="text" name="location" className="w-full bg-slate-50 border p-2 rounded" placeholder="Rayon A-1" />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-500 font-bold">Soumis à Prescription</label>
-              <select name="requiresPrescription" className="w-full bg-slate-50 border p-2 rounded">
-                <option value="false">Non (Vente libre)</option>
-                <option value="true">Oui (Ordonnance obligatoire)</option>
-              </select>
+              <div>
+                <label className="block text-slate-500 font-bold">Soumis à Prescription</label>
+                <select name="requiresPrescription" className="w-full bg-slate-50 border p-2 rounded">
+                  <option value="false">Non (Vente libre)</option>
+                  <option value="true">Oui (Ordonnance obligatoire)</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
               <button type="button" onClick={() => setShowAddMedModal(false)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded">Annuler</button>
               <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold">Ajouter au Stock</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* EDIT MEDICINE MODAL */}
+      {editingMedicine && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleUpdateMedicine} className="bg-white rounded-xl w-full max-w-sm p-5 border text-xs space-y-3 animate-scale-in">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>✏️ Modifier les Informations du Produit</span>
+              </h4>
+              <button type="button" onClick={() => setEditingMedicine(null)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+            </div>
+            
+            <div className="space-y-1">
+              <label className="block text-slate-500 font-bold">Spécialité pharmaceutique *</label>
+              <input required type="text" name="name" defaultValue={editingMedicine.name} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-slate-500 font-bold">CIP</label>
+                <input type="text" name="cip" defaultValue={editingMedicine.cip} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-slate-500 font-bold">Catégorie *</label>
+                <select 
+                  name="categoryOption" 
+                  value={editMedCategoryOption} 
+                  onChange={(e) => setEditMedCategoryOption(e.target.value)}
+                  className="w-full bg-slate-50 border p-2 rounded"
+                >
+                  <option value="Antalgique">Antalgique</option>
+                  <option value="Antibiotique">Antibiotique</option>
+                  <option value="Anti-inflammatoire">Anti-inflammatoire</option>
+                  <option value="Rhume / Grippe">Rhume / Grippe</option>
+                  <option value="Cardiologie">Cardiologie</option>
+                  <option value="Autre">Autre (Saisir manuellement)...</option>
+                </select>
+              </div>
+            </div>
+
+            {editMedCategoryOption === 'Autre' && (
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Saisir la catégorie personnalisée *</label>
+                <input required type="text" name="customCategoryText" defaultValue={editingMedicine.category} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" placeholder="Ex: Ophtalmologie, Sirop, etc." />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-slate-500 font-bold">Prix Achat HT</label>
+                <input step="0.01" type="number" name="buyingPrice" defaultValue={editingMedicine.buyingPrice} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-slate-500 font-bold">Prix Vente TTC *</label>
+                <input required step="0.01" type="number" name="sellingPrice" defaultValue={editingMedicine.sellingPrice} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-slate-500 font-bold">Quantité Réelle *</label>
+                <input required type="number" name="quantity" defaultValue={editingMedicine.quantity} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-slate-500 font-bold">Unité de quantité *</label>
+                <select 
+                  name="unitOption" 
+                  value={editMedUnitOption} 
+                  onChange={(e) => setEditMedUnitOption(e.target.value)}
+                  className="w-full bg-slate-50 border p-2 rounded"
+                >
+                  <option value="Boite">Boîte</option>
+                  <option value="Flacon">Flacon</option>
+                  <option value="Plaquette">Plaquette</option>
+                  <option value="Ampoule">Ampoule</option>
+                  <option value="Tube">Tube</option>
+                  <option value="Autre">Autre (Saisir manuellement)...</option>
+                </select>
+              </div>
+            </div>
+
+            {editMedUnitOption === 'Autre' && (
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold">Saisir l'unité personnalisée *</label>
+                <input required type="text" name="customUnitText" defaultValue={editingMedicine.unit || 'Boite'} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" placeholder="Ex: Sachet, Ampoule, etc." />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-slate-500 font-bold">Seuil Alerte Min *</label>
+                <input required type="number" name="minAlertQty" defaultValue={editingMedicine.minAlertQty} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-slate-500 font-bold">Expiration *</label>
+                <input required type="date" name="expiryDate" defaultValue={editingMedicine.expiryDate} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-slate-500 font-bold">Emplacement *</label>
+                <input required type="text" name="location" defaultValue={editingMedicine.location} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" placeholder="Rayon A-1" />
+              </div>
+              <div>
+                <label className="block text-slate-500 font-bold">Soumis à Prescription</label>
+                <select name="requiresPrescription" defaultValue={editingMedicine.requiresPrescription ? 'true' : 'false'} className="w-full bg-slate-50 border p-2 rounded">
+                  <option value="false">Non (Vente libre)</option>
+                  <option value="true">Oui (Ordonnance obligatoire)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
+              <button type="button" onClick={() => setEditingMedicine(null)} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded">Annuler</button>
+              <button type="submit" className="px-4 py-1.5 bg-emerald-700 text-white rounded font-bold">Enregistrer les modifications</button>
             </div>
           </form>
         </div>
@@ -4471,6 +5440,13 @@ export default function App() {
                 <option value="Préparateur">Préparateur</option>
                 <option value="Stagiaire">Stagiaire</option>
                 <option value="Conseiller">Conseiller</option>
+                <option value="IDE Major Central">IDE Major Central</option>
+                <option value="IDE Major Adjoint">IDE Major Adjoint</option>
+                <option value="Médecin Chef">Médecin Chef</option>
+                <option value="Comptable">Comptable</option>
+                <option value="Aide Soignante/Aide Soignant">Aide Soignante / Aide Soignant</option>
+                <option value="Sages-Femmes">Sages-Femmes</option>
+                <option value="Technicien/Technicienne">Technicien / Technicienne</option>
                 <option value="Autre">Autre (Saisir manuellement)...</option>
               </select>
             </div>
@@ -5072,7 +6048,7 @@ export default function App() {
 
             {/* Filter controls panel */}
             <div className="p-5 bg-slate-50/50 border-b border-slate-100 shrink-0">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 {/* Search */}
                 <div className="space-y-1">
                   <label className="block text-slate-500 font-extrabold uppercase tracking-wider text-[9px]">Recherche Générale</label>
@@ -5129,12 +6105,27 @@ export default function App() {
                     className="w-full bg-white border border-slate-200 p-1.5 rounded-lg text-slate-900 font-semibold focus:ring-1 focus:ring-emerald-500 text-xs"
                   />
                 </div>
+
+                {/* Status Filter */}
+                <div className="space-y-1">
+                  <label className="block text-slate-500 font-extrabold uppercase tracking-wider text-[9px]">Statut Transaction</label>
+                  <select 
+                    value={salesHistoryStatusFilter}
+                    onChange={(e) => { playBeep(); setSalesHistoryStatusFilter(e.target.value); }}
+                    className="w-full bg-white border border-slate-200 p-2 rounded-lg text-slate-900 font-semibold focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 text-xs"
+                  >
+                    <option value="all">Tous les statuts</option>
+                    <option value="En attente">En attente (Modifiable)</option>
+                    <option value="Validée">Validée (Définitive)</option>
+                    <option value="Annulée">Annulée (Remboursée)</option>
+                  </select>
+                </div>
               </div>
 
               {/* Reset filter badge indicator */}
               <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-4 border-t border-slate-100">
                 <div className="flex gap-2 items-center">
-                  {(historyStartDate || historyEndDate || historySellerId !== 'all' || historySearchQuery) && (
+                  {(historyStartDate || historyEndDate || historySellerId !== 'all' || historySearchQuery || salesHistoryStatusFilter !== 'all') && (
                     <button
                       type="button"
                       onClick={() => {
@@ -5143,6 +6134,7 @@ export default function App() {
                         setHistoryEndDate('');
                         setHistorySellerId('all');
                         setHistorySearchQuery('');
+                        setSalesHistoryStatusFilter('all');
                       }}
                       className="bg-amber-50 text-amber-800 hover:bg-amber-100 ring-1 ring-amber-200/50 px-2.5 py-1 rounded font-bold text-[10px] uppercase flex items-center gap-1 transition-all pointer-events-auto"
                     >
@@ -5157,14 +6149,19 @@ export default function App() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      playBeep();
-                      window.print();
-                    }}
+                    onClick={handlePrintConcessionsReport}
                     className="bg-slate-900 hover:bg-slate-950 font-extrabold text-[10px] text-white uppercase tracking-wider px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                   >
                     <Printer size={12} />
                     <span>Imprimer ce Rapport</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadConcessionsPDF}
+                    className="bg-emerald-700 hover:bg-emerald-800 font-extrabold text-[10px] text-white uppercase tracking-wider px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  >
+                    <Download size={12} />
+                    <span>Télécharger PDF</span>
                   </button>
                 </div>
               </div>
@@ -5225,8 +6222,19 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredSales.map(s => (
-                        <tr key={s.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="py-3 px-3 font-mono font-black text-slate-900">{s.id}</td>
+                        <tr key={s.id} className={`hover:bg-slate-50/30 transition-colors ${(s.status || 'En attente') === 'Annulée' ? 'opacity-60 bg-rose-50/10' : ''}`}>
+                          <td className="py-3 px-3">
+                            <span className="font-mono font-black text-slate-900 block">{s.id}</span>
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              (s.status || 'En attente') === 'Validée' 
+                                ? 'bg-emerald-100 text-emerald-800' 
+                                : (s.status || 'En attente') === 'Annulée' 
+                                  ? 'bg-rose-100 text-rose-800' 
+                                  : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {(s.status || 'En attente')}
+                            </span>
+                          </td>
                           <td className="py-3 px-3 text-slate-600 font-semibold">
                             {new Date(s.date).toLocaleDateString('fr-FR', { 
                               day: '2-digit', 
@@ -5253,15 +6261,79 @@ export default function App() {
                             </div>
                           </td>
                           <td className="py-3 px-3 text-right font-black text-emerald-800 text-[13px]">{parseFloat(s.totalPaid).toFixed(2)} FCFA</td>
-                          <td className="py-3 px-3 text-center">
+                          <td className="py-3 px-3 text-center space-y-1">
                             <button
                               type="button"
                               onClick={() => { playBeep(); handlePrintSale(s); }}
-                              className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1 rounded text-[10px] font-black inline-flex items-center gap-1 cursor-pointer transition-all"
+                              className="bg-slate-150 text-slate-700 hover:bg-slate-200 px-2 py-1 rounded text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-all w-full justify-center"
                             >
                               <Printer size={11} />
                               <span>ReFacture</span>
                             </button>
+                            
+                            {(s.status || 'En attente') === 'En attente' && (
+                              <div className="flex gap-1 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    playBeep();
+                                    if (confirm("Valider manuellement cette vente ?")) {
+                                      setSales(sales.map(item => item.id === s.id ? { ...item, status: 'Validée' } : item));
+                                    }
+                                  }}
+                                  className="bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold px-1.5 py-0.5 rounded text-[9px] flex-1 text-center"
+                                >
+                                  ✔️ Valider
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    playBeep();
+                                    if (confirm("Annuler manuellement cette vente ? Le stock sera restitué.")) {
+                                      const updatedMeds = [...medicines];
+                                      s.items.forEach(saleItem => {
+                                        const medIndex = updatedMeds.findIndex(m => m.id === saleItem.medicineId || m.name === saleItem.name);
+                                        if (medIndex !== -1) {
+                                          updatedMeds[medIndex].quantity += saleItem.quantity;
+                                        }
+                                      });
+                                      setMedicines(updatedMeds);
+                                      setSales(sales.map(item => item.id === s.id ? { ...item, status: 'Annulée' } : item));
+                                    }
+                                  }}
+                                  className="bg-rose-50 border border-rose-200 text-rose-800 font-bold px-1.5 py-0.5 rounded text-[9px] flex-1 text-center"
+                                >
+                                  🛑 Annuler
+                                </button>
+                              </div>
+                            )}
+                            
+                            {(s.status || 'En attente') === 'Validée' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  playBeep();
+                                  if (confirm("Annuler cette vente validée ? Le stock sera restitué.")) {
+                                    const updatedMeds = [...medicines];
+                                    s.items.forEach(saleItem => {
+                                      const medIndex = updatedMeds.findIndex(m => m.id === saleItem.medicineId || m.name === saleItem.name);
+                                      if (medIndex !== -1) {
+                                        updatedMeds[medIndex].quantity += saleItem.quantity;
+                                      }
+                                    });
+                                    setMedicines(updatedMeds);
+                                    setSales(sales.map(item => item.id === s.id ? { ...item, status: 'Annulée' } : item));
+                                  }
+                                }}
+                                className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-0.5 px-1 rounded text-[9px] border border-rose-200"
+                              >
+                                🛑 Annuler
+                              </button>
+                            )}
+
+                            {(s.status || 'En attente') === 'Annulée' && (
+                              <span className="text-[10px] text-rose-600 block font-bold">Annulée 🛑</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -5785,6 +6857,184 @@ export default function App() {
           <div className="border-t border-slate-200 mt-10 pt-3 text-center text-[8px] text-slate-400 space-y-1">
             <p className="font-bold text-slate-500">LOG PHARMA DISPENSAIRE • REGISTRE DE CAISSE ET ACTIVITÉ CLINIQUE</p>
             <p>Conforme aux réglementations de contrôle de caisse pour les pôles de dispensation de soins infirmiers et premiers secours rattachés.</p>
+          </div>
+        </div>
+      )}
+
+      {/* --- EXCLUSIVE LABORATORY REPORT PRINT CONTAINER --- */}
+      {printLaboratoryReport && (
+        <div id="pharma-laboratory-print-container" className="hidden print:block bg-white text-slate-900 font-sans p-6 text-[10px] leading-6 max-w-4xl mx-auto">
+          <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xl font-bold text-emerald-800 border-2 border-emerald-800 px-1.5 rounded-lg">+</span>
+                <span className="text-base font-black text-slate-900 uppercase tracking-tight">{pharmacyInfo.companyName}</span>
+              </div>
+              <p className="font-bold text-[11px] text-slate-800">{pharmacyInfo.pharmacyName}</p>
+              <p className="text-slate-500 text-[9px]">{pharmacyInfo.address} • Tél : {pharmacyInfo.phone}</p>
+            </div>
+            <div className="text-right">
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">RAPPORT JOURNALIER LABORATOIRE</h2>
+              <p className="text-slate-500 mt-1 font-mono text-[9px]">Document réglementaire interne</p>
+              <p className="text-slate-800 font-bold mt-1">Date d'édition : {new Date().toLocaleDateString('fr-FR')}</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 p-3 rounded-lg mb-4 flex justify-between items-center text-[9px] border">
+            <div>
+              <p className="text-slate-500">Période du rapport :</p>
+              <p className="font-bold text-slate-800 text-xs">
+                {laboratoryFilterDate ? `Activité du ${new Date(laboratoryFilterDate).toLocaleDateString('fr-FR')}` : 'Historique complet des écritures'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-slate-500">Recettes Caisse Laboratoire :</p>
+              <p className="font-black text-slate-900 text-sm">
+                {laboratoryRecords.filter(r => !laboratoryFilterDate || r.date === laboratoryFilterDate).reduce((sum, r) => sum + r.caisseDuJour, 0).toFixed(2)} FCFA
+              </p>
+            </div>
+          </div>
+
+          <table className="w-full text-left border-collapse text-[9px]">
+            <thead>
+              <tr className="border-b-2 border-slate-900 font-bold uppercase text-slate-700 bg-slate-100">
+                <th className="p-2 border">Réf</th>
+                <th className="p-2 border">Date</th>
+                <th className="p-2 border">Dossier</th>
+                <th className="p-2 border">Technicien(ne)</th>
+                <th className="p-2 border">Examens / Analyses biologiques</th>
+                <th className="p-2 border text-right">Caisse du Jour</th>
+                <th className="p-2 border">Observation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y border-b">
+              {laboratoryRecords
+                .filter(r => !laboratoryFilterDate || r.date === laboratoryFilterDate)
+                .map(rec => (
+                  <tr key={rec.id} className="hover:bg-slate-50">
+                    <td className="p-2 border font-mono font-bold text-slate-700">{rec.id}</td>
+                    <td className="p-2 border">{new Date(rec.date).toLocaleDateString('fr-FR')}</td>
+                    <td className="p-2 border font-mono font-semibold">{rec.dossier}</td>
+                    <td className="p-2 border font-medium">{rec.technician}</td>
+                    <td className="p-2 border text-slate-600 leading-normal">{rec.testType}</td>
+                    <td className="p-2 border font-bold text-slate-900 text-right">{rec.caisseDuJour.toFixed(2)} FCFA</td>
+                    <td className="p-2 border italic text-slate-500">{rec.observation}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+
+          {/* Signatures block */}
+          <div className="mt-12 grid grid-cols-2 gap-8 text-[9px]">
+            <div className="border border-dashed border-slate-300 rounded-xl p-4 min-h-[90px]">
+              <p className="font-bold text-slate-750 mb-1 uppercase">Visa du Technicien de Garde</p>
+              <p className="text-[8px] text-slate-400">Date et heure de validation :</p>
+              <p className="text-[8px] text-slate-400 mt-6">Signature et cachet :</p>
+            </div>
+            <div className="border border-dashed border-slate-300 rounded-xl p-4 min-h-[90px]">
+              <p className="font-bold text-slate-750 mb-1 uppercase">Visa de la Direction de l'Officine</p>
+              <p className="text-[8px] text-slate-400">Rapport comptable arrêté le :</p>
+              <p className="text-[8px] text-slate-400 mt-6">Signature de contrôle :</p>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 mt-10 pt-3 text-center text-[8px] text-slate-400 space-y-1">
+            <p className="font-bold text-slate-500">LOG PHARMA LABORATOIRE • REGISTRE DE CAISSE ET ANALYSES CLINIQUES</p>
+            <p>Conforme aux obligations de traçabilité des recettes de soins et d'examens biologiques des centres de santé d'officine.</p>
+          </div>
+        </div>
+      )}
+
+      {/* --- EXCLUSIVE CONCESSIONS REPORT PRINT CONTAINER --- */}
+      {printConcessionsReport && (
+        <div id="pharma-concessions-print-container" className="hidden print:block bg-white text-slate-900 font-sans p-6 text-[10px] leading-6 max-w-4xl mx-auto">
+          <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xl font-bold text-emerald-800 border-2 border-emerald-800 px-1.5 rounded-lg">+</span>
+                <span className="text-base font-black text-slate-900 uppercase tracking-tight">{pharmacyInfo.companyName}</span>
+              </div>
+              <p className="font-bold text-[11px] text-slate-800">{pharmacyInfo.pharmacyName}</p>
+              <p className="text-slate-500 text-[9px]">{pharmacyInfo.address} • Tél : {pharmacyInfo.phone}</p>
+            </div>
+            <div className="text-right">
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">HISTORIQUE DES VENTES & TRAÇABILITÉ DES CONCESSIONS</h2>
+              <p className="text-slate-500 mt-1 font-mono text-[9px]">Registre réglementaire de dispensation d'officine</p>
+              <p className="text-slate-800 font-bold mt-1">Date d'édition : {new Date().toLocaleDateString('fr-FR')}</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 p-3 rounded-lg mb-4 flex justify-between items-center text-[9px] border">
+            <div>
+              <p className="text-slate-500">Période du rapport :</p>
+              <p className="font-bold text-slate-800 text-xs">
+                {historyStartDate || historyEndDate 
+                  ? `Du ${historyStartDate ? new Date(historyStartDate).toLocaleDateString('fr-FR') : 'Début'} au ${historyEndDate ? new Date(historyEndDate).toLocaleDateString('fr-FR') : 'Fin'}`
+                  : 'Historique complet des écritures'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-slate-500">Chiffre d'Affaires Net :</p>
+              <p className="font-black text-slate-900 text-sm">
+                {filteredSales.reduce((sum, s) => sum + parseFloat(s.totalPaid), 0).toFixed(2)} FCFA
+              </p>
+            </div>
+          </div>
+
+          <table className="w-full text-left border-collapse text-[9px]">
+            <thead>
+              <tr className="border-b-2 border-slate-900 font-bold uppercase text-slate-700 bg-slate-100">
+                <th className="p-2 border">Réf Vente</th>
+                <th className="p-2 border">Date</th>
+                <th className="p-2 border">Collaborateur</th>
+                <th className="p-2 border">Patient / Client</th>
+                <th className="p-2 border">Tiers Payant</th>
+                <th className="p-2 border">Médicaments Dispensés</th>
+                <th className="p-2 border text-right">Encaissement</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y border-b">
+              {filteredSales.map(s => (
+                <tr key={s.id} className="hover:bg-slate-50">
+                  <td className="p-2 border font-mono font-bold text-slate-700">{s.id} ({s.status || 'En attente'})</td>
+                  <td className="p-2 border">
+                    {new Date(s.date).toLocaleDateString('fr-FR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </td>
+                  <td className="p-2 border font-medium">{s.sellerName || 'Collaborateur'}</td>
+                  <td className="p-2 border">{s.clientName || 'Client de Passage'}</td>
+                  <td className="p-2 border font-bold text-slate-700">{s.prescriptionAttached ? 'SESAM-Vitale' : 'Auto'}</td>
+                  <td className="p-2 border text-slate-600 leading-normal">
+                    {s.items.map(it => `${it.name} (x${it.quantity})`).join(', ')}
+                  </td>
+                  <td className="p-2 border font-bold text-slate-900 text-right">{parseFloat(s.totalPaid).toFixed(2)} FCFA</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Signatures block */}
+          <div className="mt-12 grid grid-cols-2 gap-8 text-[9px]">
+            <div className="border border-dashed border-slate-300 rounded-xl p-4 min-h-[90px]">
+              <p className="font-bold text-slate-750 mb-1 uppercase">Visa de l'Opérateur / Pharmacien Titulaire</p>
+              <p className="text-[8px] text-slate-400">Date de clôture du registre :</p>
+              <p className="text-[8px] text-slate-400 mt-6">Signature et cachet :</p>
+            </div>
+            <div className="border border-dashed border-slate-300 rounded-xl p-4 min-h-[90px]">
+              <p className="font-bold text-slate-750 mb-1 uppercase">Visa du Contrôle Interne</p>
+              <p className="text-[8px] text-slate-400">Arrêté comptable et certifié conforme le :</p>
+              <p className="text-[8px] text-slate-400 mt-6">Signature de validation :</p>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 mt-10 pt-3 text-center text-[8px] text-slate-400 space-y-1">
+            <p className="font-bold text-slate-500">REGISTRE DES FLUX & TRACABILITE DES CONCESSIONS • LOG PHARMA</p>
+            <p>Ce document est un registre de contrôle de caisse interne. Il est confidentiel et régi par les obligations de conformité d'officine.</p>
           </div>
         </div>
       )}
