@@ -72,6 +72,7 @@ interface Medicine {
   location: string;
   requiresPrescription: boolean;
   unit?: string;
+  unitSymbol?: string;
 }
 
 interface Employee {
@@ -90,6 +91,8 @@ interface Employee {
   canAccessMaternity?: boolean;
   canAccessDispensary?: boolean;
   canAccessLaboratory?: boolean;
+  guardDays?: string[];
+  guardHours?: string;
 }
 
 interface Partner {
@@ -238,6 +241,18 @@ interface MaternityRecord {
     name: string;
     role: string;
   };
+}
+
+interface DeletedMedicineRecord {
+  id: string;
+  date: string;
+  medicineId: string;
+  medicineName: string;
+  cip: string;
+  category: string;
+  quantityBeforeDelete: number;
+  deletedBy: string;
+  reason: string;
 }
 
 interface DispensaryRecord {
@@ -431,12 +446,27 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_LABORATORY_RECORDS;
   });
 
+  const [deletedMedicineRecords, setDeletedMedicineRecords] = useState<DeletedMedicineRecord[]>(() => {
+    const saved = localStorage.getItem('pharma_deleted_medicines');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [medToDelete, setMedToDelete] = useState<Medicine | null>(null);
+  const [deleteReason, setDeleteReason] = useState<string>('');
+  const [deleteStartDate, setDeleteStartDate] = useState<string>('');
+  const [deleteEndDate, setDeleteEndDate] = useState<string>('');
+
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [editingMaternityRecord, setEditingMaternityRecord] = useState<MaternityRecord | null>(null);
   const [editingDispensaryRecord, setEditingDispensaryRecord] = useState<DispensaryRecord | null>(null);
   const [editingLaboratoryRecord, setEditingLaboratoryRecord] = useState<LaboratoryRecord | null>(null);
 
+  const [stockAdjustments, setStockAdjustments] = useState<any[]>(() => {
+    const saved = localStorage.getItem('pharma_stock_adjustments');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   // State sync
+  useEffect(() => { localStorage.setItem('pharma_stock_adjustments', JSON.stringify(stockAdjustments)); }, [stockAdjustments]);
   useEffect(() => { localStorage.setItem('pharma_medicines', JSON.stringify(medicines)); }, [medicines]);
   useEffect(() => { localStorage.setItem('pharma_employees', JSON.stringify(employees)); }, [employees]);
   useEffect(() => { localStorage.setItem('pharma_partners', JSON.stringify(partners)); }, [partners]);
@@ -447,6 +477,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('pharma_maternity', JSON.stringify(maternityRecords)); }, [maternityRecords]);
   useEffect(() => { localStorage.setItem('pharma_dispensary', JSON.stringify(dispensaryRecords)); }, [dispensaryRecords]);
   useEffect(() => { localStorage.setItem('pharma_laboratory', JSON.stringify(laboratoryRecords)); }, [laboratoryRecords]);
+  useEffect(() => { localStorage.setItem('pharma_deleted_medicines', JSON.stringify(deletedMedicineRecords)); }, [deletedMedicineRecords]);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire' | 'laboratoire' | 'guide'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => localStorage.getItem('pharma_sidebar_collapsed') === 'true');
@@ -540,6 +571,8 @@ export default function App() {
   const [addMedUnitOption, setAddMedUnitOption] = useState<string>('Boite');
   const [editMedCategoryOption, setEditMedCategoryOption] = useState<string>('Antalgique');
   const [editMedUnitOption, setEditMedUnitOption] = useState<string>('Boite');
+  const [editRoleOption, setEditRoleOption] = useState<string>('Pharmacien Titulaire');
+  const [editCustomRoleText, setEditCustomRoleText] = useState<string>('');
   const [showAddPartnerModal, setShowAddPartnerModal] = useState<boolean>(false);
   const [showAddClientModal, setShowAddClientModal] = useState<boolean>(false);
   
@@ -1556,6 +1589,17 @@ export default function App() {
   const [showAdminLoginModal, setShowAdminLoginModal] = useState<boolean>(false);
   const [showEditEmpModal, setShowEditEmpModal] = useState<boolean>(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [selectedGuardDays, setSelectedGuardDays] = useState<string[]>([]);
+  const [guardStartTime, setGuardStartTime] = useState<string>('08:00');
+  const [guardEndTime, setGuardEndTime] = useState<string>('16:00');
+  const [shiftText, setShiftText] = useState<string>('09:00 - 17:00');
+
+  useEffect(() => {
+    if (selectedGuardDays.length > 0) {
+      const shortDays = selectedGuardDays.map(d => d.slice(0, 3));
+      setShiftText(`${shortDays.join(', ')} (${guardStartTime} - ${guardEndTime})`);
+    }
+  }, [selectedGuardDays, guardStartTime, guardEndTime]);
 
   const setAdminAuth = (authenticated: boolean) => {
     if (!authenticated) {
@@ -1600,6 +1644,20 @@ export default function App() {
       osc.start();
       osc.stop(ctx.currentTime + 0.08);
     } catch (e) {}
+  };
+
+  const getMedicineUnitSymbol = (m: Medicine): string => {
+    if (m.unitSymbol && m.unitSymbol.trim() !== '') {
+      return m.unitSymbol.trim();
+    }
+    const unit = (m.unit || 'Boite').toLowerCase();
+    if (unit.includes('boite') || unit.includes('boîte')) return 'b';
+    if (unit.includes('plaquette')) return 'p';
+    if (unit.includes('flacon')) return 'fl';
+    if (unit.includes('tube')) return 't';
+    if (unit.includes('ampoule')) return 'amp';
+    if (unit.includes('sachet')) return 'sach';
+    return unit.substring(0, 3) || 'b';
   };
 
   useEffect(() => {
@@ -1695,6 +1753,27 @@ export default function App() {
       return true;
     });
   }, [sales, historyStartDate, historyEndDate, historySellerId, historySearchQuery, employees, salesHistoryStatusFilter]);
+
+  const getFilteredDeletedRecords = () => {
+    return deletedMedicineRecords.filter(rec => {
+      if (!rec.date) return true;
+      const parts = rec.date.split(' ')[0].split('/');
+      if (parts.length < 3) return true;
+      const recDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      
+      if (deleteStartDate) {
+        const start = new Date(deleteStartDate);
+        start.setHours(0,0,0,0);
+        if (recDate < start) return false;
+      }
+      if (deleteEndDate) {
+        const end = new Date(deleteEndDate);
+        end.setHours(23,59,59,999);
+        if (recDate > end) return false;
+      }
+      return true;
+    });
+  };
 
   const activeStaff = employees.filter(emp => emp.status === 'Présent' && !emp.suspended).length;
   const todaySalesVal = sales
@@ -1882,7 +1961,8 @@ export default function App() {
       expiryDate: data.get('expiryDate') as string || '2028-01-01',
       location: data.get('location') as string || 'Contoir principal',
       requiresPrescription: data.get('requiresPrescription') === 'true',
-      unit: finalUnit
+      unit: finalUnit,
+      unitSymbol: (data.get('unitSymbol') as string || '').trim()
     };
     setMedicines([newMed, ...medicines]);
     setShowAddMedModal(false);
@@ -1898,6 +1978,9 @@ export default function App() {
     const unitOption = data.get('unitOption') as string;
     const finalUnit = unitOption === 'Autre' ? (data.get('customUnitText') as string || 'Boite').trim() : unitOption;
 
+    const newQuantity = parseInt(data.get('quantity') as string) || 0;
+    const oldQuantity = editingMedicine.quantity;
+
     const updatedMed: Medicine = {
       ...editingMedicine,
       name: data.get('name') as string,
@@ -1905,17 +1988,58 @@ export default function App() {
       category: finalCategory,
       buyingPrice: parseFloat(data.get('buyingPrice') as string) || 0.00,
       sellingPrice: parseFloat(data.get('sellingPrice') as string) || 0.00,
-      quantity: parseInt(data.get('quantity') as string) || 0,
+      quantity: newQuantity,
       minAlertQty: parseInt(data.get('minAlertQty') as string) || 0,
       expiryDate: data.get('expiryDate') as string,
       location: data.get('location') as string,
       requiresPrescription: data.get('requiresPrescription') === 'true',
-      unit: finalUnit
+      unit: finalUnit,
+      unitSymbol: (data.get('unitSymbol') as string || '').trim()
     };
+
+    if (newQuantity !== oldQuantity) {
+      const motive = data.get('adjustmentMotive') as string || "Ajustement d'inventaire physique";
+      const newAdjustment = {
+        id: 'adj-' + Date.now(),
+        medicineId: editingMedicine.id,
+        medicineName: editingMedicine.name,
+        cip: editingMedicine.cip,
+        oldQuantity: oldQuantity,
+        newQuantity: newQuantity,
+        date: new Date().toLocaleString('fr-FR'),
+        author: currentUser ? `${currentUser.name} (${currentUser.role})` : "Directeur de l'Officine (Admin)",
+        motive: motive
+      };
+      setStockAdjustments(prev => [newAdjustment, ...prev]);
+    }
 
     setMedicines(prev => prev.map(m => m.id === editingMedicine.id ? updatedMed : m));
     setEditingMedicine(null);
     playBeep();
+  };
+
+  const confirmDeleteMedicine = () => {
+    if (!medToDelete) return;
+    if (!deleteReason.trim()) {
+      alert("Veuillez saisir un motif de suppression valide.");
+      return;
+    }
+    playBeep();
+    const newRecord: DeletedMedicineRecord = {
+      id: 'del-' + Date.now(),
+      date: new Date().toLocaleDateString('fr-FR') + ' ' + new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}),
+      medicineId: medToDelete.id,
+      medicineName: medToDelete.name,
+      cip: medToDelete.cip,
+      category: medToDelete.category,
+      quantityBeforeDelete: medToDelete.quantity,
+      deletedBy: currentUser ? `${currentUser.name} (${currentUser.role})` : "Directeur de l'Officine (Admin)",
+      reason: deleteReason.trim()
+    };
+    setDeletedMedicineRecords(prev => [newRecord, ...prev]);
+    setMedicines(prev => prev.filter(m => m.id !== medToDelete.id));
+    setMedToDelete(null);
+    setDeleteReason('');
   };
 
   const handleUpdateMaternityRecord = (e: React.FormEvent<HTMLFormElement>) => {
@@ -2060,6 +2184,41 @@ export default function App() {
 
   const handleEditEmployee = (emp: Employee) => {
     setEditingEmployee(emp);
+    setSelectedGuardDays(emp.guardDays || []);
+    if (emp.guardHours) {
+      const parts = emp.guardHours.split(' - ');
+      if (parts.length === 2) {
+        setGuardStartTime(parts[0]);
+        setGuardEndTime(parts[1]);
+      } else {
+        setGuardStartTime('08:00');
+        setGuardEndTime('16:00');
+      }
+    } else {
+      setGuardStartTime('08:00');
+      setGuardEndTime('16:00');
+    }
+    setShiftText(emp.shift);
+    
+    const standardRoles = [
+      "Pharmacien Titulaire",
+      "Admin",
+      "Pharmacien Adjoint",
+      "Préparateur",
+      "Stagiaire",
+      "Conseiller",
+      "IDE Major Central",
+      "IDE Major Adjoint",
+      "Médecin Chef",
+      "Comptable",
+      "Aide Soignante/Aide Soignant",
+      "Sages-Femmes",
+      "Technicien/Technicienne"
+    ];
+    const isStandardRole = standardRoles.includes(emp.role);
+    setEditRoleOption(isStandardRole ? emp.role : 'Autre');
+    setEditCustomRoleText(isStandardRole ? '' : emp.role);
+    
     setShowEditEmpModal(true);
   };
 
@@ -2067,16 +2226,21 @@ export default function App() {
     e.preventDefault();
     if (!editingEmployee) return;
     const data = new FormData(e.currentTarget);
+    const roleOption = data.get('roleOption') as string;
+    const finalRole = roleOption === 'Autre' ? (data.get('customRoleText') as string || 'Collaborateur').trim() : roleOption;
+    
     const updatedEmp: Employee = {
       ...editingEmployee,
       name: data.get('name') as string,
-      role: data.get('role') as any,
+      role: finalRole,
       phone: data.get('phone') as string,
       email: data.get('email') as string,
       shift: data.get('shift') as string,
       status: data.get('status') as any,
       username: data.get('username') as string || editingEmployee.username || '',
       password: data.get('password') as string || editingEmployee.password || '',
+      guardDays: selectedGuardDays,
+      guardHours: `${guardStartTime} - ${guardEndTime}`
     };
     setEmployees(prev => prev.map(emp => emp.id === editingEmployee.id ? updatedEmp : emp));
     setShowEditEmpModal(false);
@@ -2090,25 +2254,38 @@ export default function App() {
     'Pharmacien Adjoint': ['pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
     'Préparateur': ['pos', 'stock', 'clients', 'depenses', 'guide'],
     'Stagiaire': ['pos', 'clients', 'depenses', 'guide'],
-    'Conseiller': ['pos', 'clients', 'depenses', 'guide']
+    'Conseiller': ['pos', 'clients', 'depenses', 'guide'],
+    'Médecin Chef': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide'],
+    'IDE Major Central': ['dashboard', 'pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
+    'IDE Major Adjoint': ['pos', 'stock', 'clients', 'depenses', 'guide'],
+    'Comptable': ['dashboard', 'pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
+    'Sages-Femmes': ['pos', 'clients', 'guide'],
+    'Technicien/Technicienne': ['pos', 'stock', 'clients', 'guide']
+  };
+
+  const isTabAllowed = (tabId: string, role: string, empId?: string): boolean => {
+    const isAdminRole = role === 'Admin' || role === 'Pharmacien Titulaire' || role === 'Médecin Chef';
+    if (tabId === 'maternite') {
+      const emp = employees.find(e => e.id === empId);
+      return isAdminRole || !!emp?.canAccessMaternity;
+    }
+    if (tabId === 'dispensaire') {
+      const emp = employees.find(e => e.id === empId);
+      return isAdminRole || !!emp?.canAccessDispensary;
+    }
+    if (tabId === 'laboratoire') {
+      const emp = employees.find(e => e.id === empId);
+      return isAdminRole || !!emp?.canAccessLaboratory;
+    }
+    if (tabId === 'guide') {
+      return true;
+    }
+    const allowedTabs = allowedTabsForRoles[role] || ['pos', 'clients', 'depenses', 'guide'];
+    return allowedTabs.includes(tabId);
   };
 
   const userRole = currentUser?.role || 'Stagiaire';
-  let isTabAuthorized = false;
-  if (activeTab === 'maternite') {
-    const emp = employees.find(e => e.id === currentUser?.id);
-    isTabAuthorized = isAdmin || !!emp?.canAccessMaternity;
-  } else if (activeTab === 'dispensaire') {
-    const emp = employees.find(e => e.id === currentUser?.id);
-    isTabAuthorized = isAdmin || !!emp?.canAccessDispensary;
-  } else if (activeTab === 'laboratoire') {
-    const emp = employees.find(e => e.id === currentUser?.id);
-    isTabAuthorized = isAdmin || !!emp?.canAccessLaboratory;
-  } else if (activeTab === 'guide') {
-    isTabAuthorized = true;
-  } else {
-    isTabAuthorized = !!allowedTabsForRoles[userRole]?.includes(activeTab);
-  }
+  const isTabAuthorized = currentUser ? isTabAllowed(activeTab, currentUser.role, currentUser.id) : false;
 
   if (!currentUser) {
     return (
@@ -2318,7 +2495,7 @@ export default function App() {
                 { id: 'dispensaire', label: 'Compta Dispensaire', icon: Activity, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessDispensary },
                 { id: 'laboratoire', label: 'Compta Laboratoire', icon: FlaskConical, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessLaboratory },
                 { id: 'guide', label: "Guide d'Utilisation", icon: BookOpen, roles: ['Admin', 'Pharmacien Titulaire', 'Pharmacien Adjoint', 'Préparateur', 'Stagiaire', 'Conseiller'] },
-              ].filter(tab => !currentUser || tab.roles.includes(currentUser.role) || tab.forceShow).map((tab) => {
+              ].filter(tab => !currentUser || isTabAllowed(tab.id, currentUser.role, currentUser.id)).map((tab) => {
                 const Icon = tab.icon;
                 const statusActive = activeTab === tab.id;
                 return (
@@ -2444,8 +2621,9 @@ export default function App() {
               const totalSalesAllTime = sales.reduce((sum, s) => sum + (parseFloat(s.totalPaid) || 0), 0);
               const totalMaternityAllTime = maternityRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
               const totalDispensaryAllTime = dispensaryRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
+              const totalLaboratoryAllTime = laboratoryRecords.reduce((sum, r) => sum + r.caisseDuJour, 0);
               const totalExpensesAllTime = expenses.filter(e => e.isValidated).reduce((sum, e) => sum + e.amount, 0);
-              const netBalance = totalSalesAllTime + totalMaternityAllTime + totalDispensaryAllTime - totalExpensesAllTime;
+              const netBalance = totalSalesAllTime + totalMaternityAllTime + totalDispensaryAllTime + totalLaboratoryAllTime - totalExpensesAllTime;
 
               return (
                 <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300">
@@ -2459,7 +2637,7 @@ export default function App() {
                       </div>
                       <div>
                         <h3 className="text-xs font-black uppercase tracking-wider">État des Comptes de Caisse & Trésorerie</h3>
-                        <p className="text-[10px] text-slate-300">Pharmacie, Maternité, Dispensaire & Dépenses</p>
+                        <p className="text-[10px] text-slate-300">Pharmacie, Maternité, Dispensaire, Laboratoire & Dépenses</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -2478,7 +2656,7 @@ export default function App() {
                   {showAccountsPanel && (
                     <div className="p-5 bg-white border-t border-slate-100/60 space-y-5">
                       {/* Grid de alignement des menus de comptes */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         
                         {/* 1. CAISSE PRINCIPALE */}
                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/10 transition-all flex flex-col justify-between space-y-3">
@@ -2549,7 +2727,30 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* 4. COMPTE DÉPENSES VALIDÉES */}
+                        {/* 4. CAISSE LABORATOIRE */}
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 hover:border-violet-300 hover:bg-violet-50/10 transition-all flex flex-col justify-between space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Caisse Laboratoire</span>
+                              <span className="text-lg font-black text-violet-950 block">{totalLaboratoryAllTime.toFixed(2)} FCFA</span>
+                            </div>
+                            <div className="p-2 bg-violet-50 text-violet-600 rounded-lg">
+                              <FlaskConical size={15} />
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-slate-500 flex justify-between items-center pt-2 border-t border-slate-200/50">
+                            <span>{laboratoryRecords.length} fiches de caisse</span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); playBeep(); setActiveTab('laboratoire'); }} 
+                              className="text-violet-700 font-bold hover:underline flex items-center gap-0.5"
+                            >
+                              <span>Ouvrir</span>
+                              <ChevronRight size={10} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 5. COMPTE DÉPENSES VALIDÉES */}
                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 hover:border-rose-300 hover:bg-rose-50/10 transition-all flex flex-col justify-between space-y-3">
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
@@ -2581,7 +2782,7 @@ export default function App() {
                             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                             <span>Synthèse Récapitulative de Trésorerie Actuelle</span>
                           </p>
-                          <p className="text-slate-500 text-[11px]">Calculé sur la base de la totalité des écritures de vente et des budgets validés.</p>
+                          <p className="text-slate-500 text-[11px]">Calculé sur la base de la totalité des écritures de vente (officine), maternité, dispensaire, laboratoire et des dépenses validées.</p>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
@@ -3355,6 +3556,13 @@ export default function App() {
                 <option value="Anti-inflammatoire">Anti-inflammatoires</option>
                 <option value="Rhume / Grippe">Rhume / Grippe</option>
                 <option value="Cardiologie">Cardiologie</option>
+                <option value="Antispasmodique">Antispasmodiques</option>
+                <option value="Gastro-entérologie">Gastro-entérologie</option>
+                <option value="Gynécologie">Gynécologie</option>
+                <option value="Pédiatrie">Pédiatrie</option>
+                <option value="Dermatologie">Dermatologie</option>
+                <option value="Ophtalmologie">Ophtalmologie</option>
+                <option value="Consommable">Consommable / Fournitures</option>
               </select>
               <div className="flex items-center gap-2">
                 <input 
@@ -3409,26 +3617,43 @@ export default function App() {
                             </span>
                           </td>
                           <td className="p-3 text-center font-bold">
-                            <span className={`px-2 py-1 rounded inline-block ${isLow ? 'bg-red-50 text-red-700 border border-red-200' : 'text-slate-900'}`}>{m.quantity} b.</span>
+                            <div className="flex flex-col items-center justify-center">
+                              <span className={`px-2 py-0.5 rounded inline-block font-mono text-[11px] ${isLow ? 'bg-red-50 text-red-700 border border-red-200' : 'text-slate-900 bg-slate-50 border border-slate-100'}`}>
+                                {m.quantity} <span className="font-extrabold text-[10px] text-emerald-700">{getMedicineUnitSymbol(m)}</span>
+                              </span>
+                              <span className="text-[9px] text-slate-400 mt-0.5 font-medium">{m.unit || 'Boite'}</span>
+                            </div>
                           </td>
                           <td className="p-3 text-right font-mono">{m.buyingPrice.toFixed(2)} FCFA</td>
                           <td className="p-3 text-right font-mono font-bold text-emerald-800">{m.sellingPrice.toFixed(2)} FCFA</td>
                           <td className="p-3 text-center font-mono">{m.expiryDate}</td>
                           <td className="p-3">{m.location}</td>
-                          <td className="p-3 text-right space-x-2">
+                          <td className="p-3 text-right space-x-1 whitespace-nowrap">
                             <button 
                               onClick={() => {
                                 playBeep();
                                 setEditingMedicine(m);
-                                const isStandardCat = ['Antalgique','Antibiotique','Anti-inflammatoire','Rhume / Grippe','Cardiologie'].includes(m.category);
+                                const isStandardCat = ['Antalgique','Antibiotique','Anti-inflammatoire','Rhume / Grippe','Cardiologie','Antispasmodique','Gastro-entérologie','Gynécologie','Pédiatrie','Dermatologie','Ophtalmologie','Consommable'].includes(m.category);
                                 setEditMedCategoryOption(isStandardCat ? m.category : 'Autre');
                                 const isStandardUnit = ['Boite', 'Flacon', 'Tube', 'Plaquette', 'Ampoule', 'Sachet'].includes(m.unit);
                                 setEditMedUnitOption(isStandardUnit ? m.unit : 'Autre');
                               }}
-                              className="text-emerald-700 hover:text-emerald-900 font-bold bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded"
+                              className="text-emerald-700 hover:text-emerald-900 font-bold bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded inline-block"
                             >
                               ✏️ Modifier
                             </button>
+                            {isAdmin && (
+                              <button 
+                                onClick={() => {
+                                  playBeep();
+                                  setMedToDelete(m);
+                                  setDeleteReason('');
+                                }}
+                                className="text-red-700 hover:text-red-900 font-bold bg-red-50 hover:bg-red-100 px-2 py-1 rounded inline-block"
+                              >
+                                🗑️ Supprimer
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -3436,6 +3661,183 @@ export default function App() {
                 </tbody>
               </table>
             </div>
+
+            {/* HISTORIQUE DES AJUSTEMENTS DE STOCK */}
+            <div className="pt-6 border-t border-slate-100">
+              <div className="flex justify-between items-center mb-3">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📋 Registre de Traçabilité des Mouvements d'Inventaire</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400">Historique complet des modifications manuelles de la quantité réelle des produits par l'administration.</p>
+                </div>
+                {stockAdjustments.length > 0 && (
+                  <button 
+                    onClick={() => {
+                      if(window.confirm("Voulez-vous effacer l'historique de traçabilité ?")) {
+                        playBeep();
+                        setStockAdjustments([]);
+                      }
+                    }} 
+                    className="text-rose-600 hover:text-rose-800 font-bold text-[10px] bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg cursor-pointer"
+                  >
+                    🗑️ Vider l'historique
+                  </button>
+                )}
+              </div>
+
+              {stockAdjustments.length === 0 ? (
+                <div className="bg-slate-50 rounded-xl p-6 text-center text-slate-400">
+                  <p className="text-xs">Aucune modification manuelle de quantité n'a été enregistrée pour le moment.</p>
+                  <p className="text-[10px] text-slate-400/80 mt-1">Toutes les corrections de stock physique effectuées par les administrateurs apparaîtront ici.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border rounded-xl bg-slate-50">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-slate-100/80 text-[9px] uppercase font-black text-slate-400 tracking-wider border-b">
+                        <th className="p-2.5">Date / Heure</th>
+                        <th className="p-2.5">CIP</th>
+                        <th className="p-2.5">Désignation</th>
+                        <th className="p-2.5 text-center">Ancien Stock</th>
+                        <th className="p-2.5 text-center">Nouveau Stock</th>
+                        <th className="p-2.5 text-center">Ajustement</th>
+                        <th className="p-2.5">Auteur (Rôle)</th>
+                        <th className="p-2.5">Motif / Commentaire</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-[10px] text-slate-600">
+                      {stockAdjustments.map((adj: any) => {
+                        const diff = adj.newQuantity - adj.oldQuantity;
+                        const diffColor = diff > 0 ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50";
+                        const diffSymbol = diff > 0 ? `+${adj.newQuantity - adj.oldQuantity}` : `${adj.newQuantity - adj.oldQuantity}`;
+                        return (
+                          <tr key={adj.id} className="hover:bg-white transition-colors">
+                            <td className="p-2.5 font-mono font-bold text-slate-500">{adj.date}</td>
+                            <td className="p-2.5 font-mono text-slate-400">{adj.cip}</td>
+                            <td className="p-2.5 font-bold text-slate-800">{adj.medicineName}</td>
+                            <td className="p-2.5 text-center font-mono">{adj.oldQuantity} b.</td>
+                            <td className="p-2.5 text-center font-mono font-bold text-slate-900">{adj.newQuantity} b.</td>
+                            <td className="p-2.5 text-center">
+                              <span className={`px-2 py-0.5 rounded-full font-mono font-black text-[9px] ${diffColor}`}>
+                                {diffSymbol}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-medium">{adj.author}</td>
+                            <td className="p-2.5 font-semibold text-slate-700 italic">{adj.motive}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* RAPPORT DE SUPPRESSION DE PRODUITS EN INVENTAIRE (ADMIN ONLY) */}
+            {isAdmin && (
+              <div className="pt-6 mt-6 border-t border-rose-100 bg-rose-50/10 rounded-xl p-5 border border-rose-100/40">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h4 className="text-xs font-black text-rose-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="p-1 bg-rose-100 text-rose-700 rounded text-[11px]">🛡️ Contrôle Audit</span>
+                      <span>Rapports de Suppression des Produits</span>
+                    </h4>
+                    <p className="text-[10px] text-slate-500">Registre d'audit confidentiel retraçant les suppressions définitives de produits en stock.</p>
+                  </div>
+                  {deletedMedicineRecords.length > 0 && (
+                    <button 
+                      onClick={() => {
+                        if(window.confirm("Voulez-vous effacer définitivement l'historique des rapports de suppression ?")) {
+                          playBeep();
+                          setDeletedMedicineRecords([]);
+                        }
+                      }} 
+                      className="text-rose-700 hover:text-rose-900 font-bold text-[10px] bg-white border border-rose-200 hover:bg-rose-50 px-2.5 py-1 rounded-lg cursor-pointer shadow-2xs"
+                    >
+                      Effacer tout le log
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtre par Période */}
+                <div className="bg-white p-3.5 rounded-lg border border-slate-200/60 mb-4 shadow-3xs flex flex-wrap items-center justify-between gap-3 text-[11px]">
+                  <div className="flex flex-wrap items-center gap-3.5">
+                    <span className="font-bold text-slate-700 flex items-center gap-1">
+                      <span>📅</span> Filtrer par Période :
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <label className="text-slate-400 text-[10px] uppercase">Du</label>
+                      <input 
+                        type="date" 
+                        value={deleteStartDate} 
+                        onChange={(e) => setDeleteStartDate(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded px-2.5 py-1 text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-rose-500 font-medium"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-slate-400 text-[10px] uppercase">Au</label>
+                      <input 
+                        type="date" 
+                        value={deleteEndDate} 
+                        onChange={(e) => setDeleteEndDate(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded px-2.5 py-1 text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-rose-500 font-medium"
+                      />
+                    </div>
+                    {(deleteStartDate || deleteEndDate) && (
+                      <button 
+                        onClick={() => { playBeep(); setDeleteStartDate(''); setDeleteEndDate(''); }}
+                        className="text-slate-500 hover:text-rose-700 font-bold underline cursor-pointer"
+                      >
+                        Effacer les filtres
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500">
+                    {getFilteredDeletedRecords().length} suppression(s) trouvée(s)
+                  </div>
+                </div>
+
+                {/* Liste des Suppressions */}
+                {getFilteredDeletedRecords().length === 0 ? (
+                  <div className="bg-white rounded-xl p-6 text-center text-slate-400 border border-slate-100 shadow-3xs">
+                    <p className="text-xs">Aucun rapport de suppression n'a été enregistré pour la période sélectionnée.</p>
+                    <p className="text-[10px] text-slate-400/80 mt-1">Les produits retirés définitivement du catalogue de l'officine figureront ici.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border rounded-xl bg-white shadow-3xs">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-50 text-[9px] uppercase font-black text-slate-400 tracking-wider border-b">
+                          <th className="p-2.5">Date / Heure</th>
+                          <th className="p-2.5">CIP</th>
+                          <th className="p-2.5">Nom du Produit</th>
+                          <th className="p-2.5 text-center">Qté Détruite</th>
+                          <th className="p-2.5 text-center">Catégorie</th>
+                          <th className="p-2.5">Supprimé par</th>
+                          <th className="p-2.5">Motif détaillé de suppression</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y text-[10px] text-slate-600">
+                        {getFilteredDeletedRecords().map((rec) => (
+                          <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="p-2.5 font-mono font-bold text-slate-500">{rec.date}</td>
+                            <td className="p-2.5 font-mono text-slate-400">{rec.cip}</td>
+                            <td className="p-2.5 font-bold text-slate-800">{rec.medicineName}</td>
+                            <td className="p-2.5 text-center font-mono font-bold text-rose-700">{rec.quantityBeforeDelete}</td>
+                            <td className="p-2.5 text-center">
+                              <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[8px] font-bold">{rec.category}</span>
+                            </td>
+                            <td className="p-2.5 font-semibold text-slate-700">{rec.deletedBy}</td>
+                            <td className="p-2.5 font-semibold text-rose-950 italic bg-rose-50/50">{rec.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -3489,6 +3891,9 @@ export default function App() {
                   if (!isAdmin) {
                     setShowAdminLoginModal(true);
                   } else {
+                    setSelectedGuardDays([]);
+                    setGuardStartTime('08:00');
+                    setGuardEndTime('16:00');
                     setShowAddEmpModal(true); 
                   }
                 }} 
@@ -5311,11 +5716,65 @@ export default function App() {
 
       {/* FOOTER GENERAL */}
       <footer className="bg-emerald-950 text-white/50 py-5 border-t border-emerald-900 text-center text-[10px]">
-        <p>LOG PHARMA Officine v4.1 - Solution validée pour la dispensation dématérialisée.</p>
+        <p>LOG PHARMA Officine & Clinique v4.1 - Solution validée pour la dispensation dématérialisée et la gestion de cliniques ou centres de santé.</p>
         <p className="mt-1">© LOG PHARMA. Tous droits réservés. • Développé par <a href="https://gt-numerique.vercel.app" target="_blank" rel="noopener noreferrer" className="text-emerald-400 font-bold hover:text-emerald-300 transition-colors uppercase tracking-wider cursor-pointer">GT NUMÉRIQUE</a></p>
       </footer>
 
       {/* ================= MODALS REGISTRATION FORMS ================= */}
+
+      {/* DELETION CONFIRMATION MODAL */}
+      {medToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 border text-xs space-y-4 animate-scale-in">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h4 className="font-bold text-sm text-red-700 flex items-center gap-1.5">
+                <span>⚠️ Confirmation de Suppression</span>
+              </h4>
+              <button type="button" onClick={() => setMedToDelete(null)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+            </div>
+
+            <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-900 text-[11px] space-y-1">
+              <p>Vous êtes sur le point de supprimer définitivement le produit suivant de l'inventaire :</p>
+              <div className="pt-1.5 font-bold">
+                <span className="block text-slate-900 text-xs">{medToDelete.name}</span>
+                <span className="block font-mono text-slate-500 text-[10px]">CIP : {medToDelete.cip} | Stock actuel : {medToDelete.quantity} {getMedicineUnitSymbol(medToDelete)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-slate-700 font-bold">Motif de suppression obligatoire *</label>
+              <textarea 
+                required 
+                rows={3}
+                value={deleteReason} 
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Ex : Erreur de doublon de saisie, Produit définitivement obsolète ou retiré de la vente, Casse globale..."
+                className="w-full bg-slate-50 border p-2.5 rounded focus:ring-1 focus:ring-red-500 text-slate-800"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t text-[11px]">
+              <button 
+                type="button" 
+                onClick={() => setMedToDelete(null)} 
+                className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded"
+              >
+                Annuler
+              </button>
+              <button 
+                type="button" 
+                onClick={confirmDeleteMedicine} 
+                disabled={!deleteReason.trim()}
+                className={`px-4 py-1.5 text-white rounded font-bold transition-all ${
+                  deleteReason.trim() ? 'bg-red-700 hover:bg-red-800 shadow-xs cursor-pointer' : 'bg-red-300 cursor-not-allowed'
+                }`}
+              >
+                Confirmer la Suppression
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* A. NEW MEDICINE MODAL */}
       {showAddMedModal && (
@@ -5349,6 +5808,13 @@ export default function App() {
                   <option value="Anti-inflammatoire">Anti-inflammatoire</option>
                   <option value="Rhume / Grippe">Rhume / Grippe</option>
                   <option value="Cardiologie">Cardiologie</option>
+                  <option value="Antispasmodique">Antispasmodique</option>
+                  <option value="Gastro-entérologie">Gastro-entérologie</option>
+                  <option value="Gynécologie">Gynécologie</option>
+                  <option value="Pédiatrie">Pédiatrie</option>
+                  <option value="Dermatologie">Dermatologie</option>
+                  <option value="Ophtalmologie">Ophtalmologie</option>
+                  <option value="Consommable">Consommable / Fournitures</option>
                   <option value="Autre">Autre (Saisir manuellement)...</option>
                 </select>
               </div>
@@ -5401,6 +5867,11 @@ export default function App() {
                 <input required type="text" name="customUnitText" className="w-full bg-slate-50 border p-2 rounded" placeholder="Ex: Sachet, Ampoule, etc." />
               </div>
             )}
+
+            <div className="space-y-1">
+              <label className="block text-slate-500 font-bold">Sigle d'unité personnalisé <span className="text-slate-400 font-normal">(Ex: b, p, fl, amp, sach)</span></label>
+              <input type="text" name="unitSymbol" className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500 text-slate-800" placeholder="Laisser vide pour le sigle automatique (b, p, etc.)" />
+            </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -5469,6 +5940,13 @@ export default function App() {
                   <option value="Anti-inflammatoire">Anti-inflammatoire</option>
                   <option value="Rhume / Grippe">Rhume / Grippe</option>
                   <option value="Cardiologie">Cardiologie</option>
+                  <option value="Antispasmodique">Antispasmodique</option>
+                  <option value="Gastro-entérologie">Gastro-entérologie</option>
+                  <option value="Gynécologie">Gynécologie</option>
+                  <option value="Pédiatrie">Pédiatrie</option>
+                  <option value="Dermatologie">Dermatologie</option>
+                  <option value="Ophtalmologie">Ophtalmologie</option>
+                  <option value="Consommable">Consommable / Fournitures</option>
                   <option value="Autre">Autre (Saisir manuellement)...</option>
                 </select>
               </div>
@@ -5515,12 +5993,28 @@ export default function App() {
               </div>
             </div>
 
+            <div className="space-y-1">
+              <label className="block text-slate-500 font-bold">Motif d'ajustement (si la quantité change)</label>
+              <select name="adjustmentMotive" className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500 text-slate-800">
+                <option value="Ajustement d'inventaire physique">📊 Ajustement d'inventaire physique</option>
+                <option value="Correction d'erreur de saisie">✏️ Correction d'erreur de saisie</option>
+                <option value="Pertes / Casse">💥 Pertes / Casse</option>
+                <option value="Produits périmés retirés">⏳ Produits périmés retirés</option>
+                <option value="Donation / Usage interne clinique">🏥 Usage interne clinique / Donation</option>
+              </select>
+            </div>
+
             {editMedUnitOption === 'Autre' && (
               <div className="space-y-1">
                 <label className="block text-slate-500 font-bold">Saisir l'unité personnalisée *</label>
                 <input required type="text" name="customUnitText" defaultValue={editingMedicine.unit || 'Boite'} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500" placeholder="Ex: Sachet, Ampoule, etc." />
               </div>
             )}
+
+            <div className="space-y-1">
+              <label className="block text-slate-500 font-bold">Sigle d'unité personnalisé <span className="text-slate-400 font-normal">(Ex: b, p, fl, amp, sach)</span></label>
+              <input type="text" name="unitSymbol" defaultValue={editingMedicine.unitSymbol || ''} className="w-full bg-slate-50 border p-2 rounded focus:ring-1 focus:ring-emerald-500 text-slate-800" placeholder="Ex: b (laissera le sigle par défaut si vide)" />
+            </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -5740,7 +6234,9 @@ export default function App() {
               status: 'Présent',
               badgeId: `BADGE-${Math.floor(100 + Math.random() * 899)}`,
               username: (data.get('username') as string || '').toLowerCase().trim(),
-              password: (data.get('password') as string || 'pharma')
+              password: (data.get('password') as string || 'pharma'),
+              guardDays: selectedGuardDays,
+              guardHours: `${guardStartTime} - ${guardEndTime}`
             };
             setEmployees([...employees, newEmp]);
             setShowAddEmpModal(false);
@@ -5817,9 +6313,81 @@ export default function App() {
                 <input type="email" name="email" className="w-full bg-slate-50 border p-2 rounded" placeholder="email@gmail.com" />
               </div>
             </div>
-            <div>
-              <label className="block text-slate-500 font-bold">Rotation / Garde *</label>
-              <input required type="text" name="shift" className="w-full bg-slate-50 border p-2 rounded" defaultValue="09h - 17h" />
+            {/* Custom Interactive Guard Planner */}
+            <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/80 space-y-2">
+              <label className="block font-black text-emerald-950 text-[10px] uppercase tracking-wider">
+                📅 Attribuer Jours & Heures de Garde (Manuel)
+              </label>
+              
+              {/* Day badges picker */}
+              <div className="flex flex-wrap gap-1">
+                {['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'].map(day => {
+                  const isSelected = selectedGuardDays.includes(day);
+                  const shortName = day.slice(0, 3);
+                  return (
+                    <button
+                      type="button"
+                      key={day}
+                      onClick={() => {
+                        playBeep();
+                        setSelectedGuardDays(prev => 
+                          prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+                        );
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs' 
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      title={day}
+                    >
+                      {shortName}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Start & End Hours pickers */}
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div>
+                  <label className="block text-slate-500 font-bold uppercase mb-0.5">Heure Début</label>
+                  <input 
+                    type="time" 
+                    value={guardStartTime}
+                    onChange={(e) => {
+                      playBeep();
+                      setGuardStartTime(e.target.value);
+                    }}
+                    className="w-full bg-white border p-1 rounded font-mono font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 font-bold uppercase mb-0.5">Heure Fin</label>
+                  <input 
+                    type="time" 
+                    value={guardEndTime}
+                    onChange={(e) => {
+                      playBeep();
+                      setGuardEndTime(e.target.value);
+                    }}
+                    className="w-full bg-white border p-1 rounded font-mono font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Auto compiled Shift text block */}
+              <div>
+                <label className="block text-slate-400 font-bold text-[8px] uppercase tracking-wider">Texte de Garde compilé *</label>
+                <input 
+                  required 
+                  type="text" 
+                  name="shift" 
+                  value={shiftText}
+                  onChange={(e) => setShiftText(e.target.value)}
+                  className="w-full bg-slate-50 border p-2 rounded font-medium text-slate-800 focus:ring-1 focus:ring-emerald-500" 
+                />
+                <span className="text-[9px] text-slate-400 leading-none block mt-0.5">Vous pouvez personnaliser ce texte librement si besoin.</span>
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t">
               <button type="button" onClick={() => { setShowAddEmpModal(false); setSelectedRoleOption('Pharmacien Titulaire'); setCustomRoleText(''); }} className="px-3 py-1.5 text-slate-500">Annuler</button>
@@ -6252,18 +6820,45 @@ export default function App() {
             <div className="space-y-1">
               <label className="block text-slate-500 font-bold uppercase tracking-wider text-[9px]">Rôle / Discipline *</label>
               <select 
-                name="role" 
-                defaultValue={editingEmployee.role}
+                name="roleOption" 
+                value={editRoleOption}
+                onChange={(e) => {
+                  playBeep();
+                  setEditRoleOption(e.target.value);
+                }}
                 className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-slate-900 font-semibold"
               >
+                <option value="Pharmacien Titulaire">Pharmacien Titulaire (Admin)</option>
                 <option value="Admin">Administrateur Technique</option>
-                <option value="Pharmacien Titulaire">Pharmacien Titulaire</option>
                 <option value="Pharmacien Adjoint">Pharmacien Adjoint</option>
                 <option value="Préparateur">Préparateur</option>
                 <option value="Stagiaire">Stagiaire</option>
                 <option value="Conseiller">Conseiller</option>
+                <option value="IDE Major Central">IDE Major Central</option>
+                <option value="IDE Major Adjoint">IDE Major Adjoint</option>
+                <option value="Médecin Chef">Médecin Chef</option>
+                <option value="Comptable">Comptable</option>
+                <option value="Aide Soignante/Aide Soignant">Aide Soignante / Aide Soignant</option>
+                <option value="Sages-Femmes">Sages-Femmes</option>
+                <option value="Technicien/Technicienne">Technicien / Technicienne</option>
+                <option value="Autre">Autre (Saisir manuellement)...</option>
               </select>
             </div>
+
+            {editRoleOption === 'Autre' && (
+              <div className="space-y-1">
+                <label className="block text-slate-500 font-bold uppercase tracking-wider text-[9px]">Saisir le Rôle / Poste personnalisé *</label>
+                <input 
+                  required 
+                  type="text" 
+                  name="customRoleText" 
+                  value={editCustomRoleText}
+                  onChange={(e) => setEditCustomRoleText(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-slate-800 font-semibold" 
+                  placeholder="Ex: Comptable, Chauffeur, Agent d'entretien..." 
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -6311,29 +6906,93 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="block text-slate-500 font-bold uppercase tracking-wider text-[9px]">Planning de Garde *</label>
+            {/* Custom Interactive Guard Planner */}
+            <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/80 space-y-2 text-left">
+              <label className="block font-black text-emerald-950 text-[10px] uppercase tracking-wider">
+                📅 Attribuer Jours & Heures de Garde (Manuel)
+              </label>
+              
+              {/* Day badges picker */}
+              <div className="flex flex-wrap gap-1">
+                {['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'].map(day => {
+                  const isSelected = selectedGuardDays.includes(day);
+                  const shortName = day.slice(0, 3);
+                  return (
+                    <button
+                      type="button"
+                      key={day}
+                      onClick={() => {
+                        playBeep();
+                        setSelectedGuardDays(prev => 
+                          prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+                        );
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs' 
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      title={day}
+                    >
+                      {shortName}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Start & End Hours pickers */}
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div>
+                  <label className="block text-slate-500 font-bold uppercase mb-0.5">Heure Début</label>
+                  <input 
+                    type="time" 
+                    value={guardStartTime}
+                    onChange={(e) => {
+                      playBeep();
+                      setGuardStartTime(e.target.value);
+                    }}
+                    className="w-full bg-white border p-1 rounded font-mono font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 font-bold uppercase mb-0.5">Heure Fin</label>
+                  <input 
+                    type="time" 
+                    value={guardEndTime}
+                    onChange={(e) => {
+                      playBeep();
+                      setGuardEndTime(e.target.value);
+                    }}
+                    className="w-full bg-white border p-1 rounded font-mono font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Auto compiled Shift text block */}
+              <div>
+                <label className="block text-slate-400 font-bold text-[8px] uppercase tracking-wider">Planning / Texte de Garde compilé *</label>
                 <input 
                   required 
                   type="text" 
                   name="shift" 
-                  defaultValue={editingEmployee.shift}
-                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-slate-900 font-medium" 
+                  value={shiftText}
+                  onChange={(e) => setShiftText(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-slate-900 font-medium focus:ring-1 focus:ring-emerald-500" 
                 />
               </div>
-              <div className="space-y-1">
-                <label className="block text-slate-500 font-bold uppercase tracking-wider text-[9px]">Statut initial *</label>
-                <select 
-                  name="status" 
-                  defaultValue={editingEmployee.status}
-                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-slate-900 font-semibold"
-                >
-                  <option value="Présent">Présent</option>
-                  <option value="Absent">Absent</option>
-                  <option value="En congé">En congé</option>
-                </select>
-              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-slate-500 font-bold uppercase tracking-wider text-[9px]">Statut initial *</label>
+              <select 
+                name="status" 
+                defaultValue={editingEmployee.status}
+                className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-slate-900 font-semibold animate-none"
+              >
+                <option value="Présent">Présent</option>
+                <option value="Absent">Absent</option>
+                <option value="En congé">En congé</option>
+              </select>
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">

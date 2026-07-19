@@ -65,7 +65,7 @@ const CHAPTERS: Chapter[] = [
     title: "1. Introduction & Tableau de Bord",
     duration: 30,
     subtitles: [
-      { time: 0, text: "Bienvenue dans le guide d'utilisation vidéo officiel de LOG PHARMA." },
+      { time: 0, text: "Bienvenue dans le guide d'utilisation vidéo officiel de LOG PHARMA, également logiciel de gestion de clinique ou centre de santé." },
       { time: 5, text: "Découvrez l'interface moderne d'administration conçue pour fluidifier la gestion d'officine." },
       { time: 12, text: "Le Tableau de bord agrège le Chiffre d'Affaires net et le volume des transactions en temps réel." },
       { time: 20, text: "Les graphiques interactifs vous permettent de surveiller l'évolution des ventes et les performances." },
@@ -247,7 +247,7 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(80);
-    const introText = "LOG PHARMA est une solution web full-stack complete concue pour digitaliser l'activite quotidienne des officines pharmaceutiques. Elle combine une caisse de vente intelligente, un suivi rigoureux des stocks avec alertes CIP, une gestion du personnel, et des modules de comptabilite specialises (Maternite, Dispensaire, Laboratoire) pour assurer une tracabilite financiere et medicale absolue.";
+    const introText = "LOG PHARMA est une solution web full-stack complete concue pour digitaliser l'activite quotidienne des officines pharmaceutiques, ainsi que des cliniques ou centres de sante. Elle combine une caisse de vente intelligente, un suivi rigoureux des stocks avec alertes CIP, une gestion du personnel, et des modules de comptabilite specialises (Maternite, Dispensaire, Laboratoire) pour assurer une tracabilite financiere et medicale absolue. LOG PHARMA s'impose ainsi comme un veritable logiciel de gestion de clinique ou centre de sante.";
     const splitIntro = doc.splitTextToSize(introText, 180);
     doc.text(splitIntro, 14, 52);
     
@@ -1014,14 +1014,14 @@ export const GuideSection: React.FC<GuideSectionProps> = ({
 
           {/* QUICK LINKS BENTO */}
           <div className="bg-emerald-950 text-white p-5 rounded-2xl space-y-3 shadow-md border border-emerald-900" style={{ backgroundImage: 'radial-gradient(circle at bottom left, #047857, #022c22)' }}>
-            <h4 className="font-black text-xs uppercase tracking-wider text-emerald-300">Ressources & Conformité d'Officine</h4>
+            <h4 className="font-black text-xs uppercase tracking-wider text-emerald-300">Ressources & Conformité d'Officine, Clinique & Centre de Santé</h4>
             <p className="text-[11px] text-slate-300">
-              LOG PHARMA est homologué pour le suivi dématérialisé d'officine et intègre les standards de traçabilité CIP13.
+              LOG PHARMA est homologué pour le suivi dématérialisé d'officine, de clinique ou centre de santé, et intègre les standards de traçabilité CIP13.
             </p>
             <div className="pt-2 grid grid-cols-2 gap-2 text-[10px]">
               <div className="bg-emerald-900/40 p-2.5 rounded-xl border border-emerald-800/60">
-                <p className="font-bold text-emerald-300">✅ Normes d'Officine</p>
-                <p className="text-slate-300 mt-1 font-semibold">Conforme directives dématérialisation d'Afrique de l'Ouest</p>
+                <p className="font-bold text-emerald-300">✅ Normes d'Officine & Clinique</p>
+                <p className="text-slate-300 mt-1 font-semibold">Conforme directives dématérialisation et gestion de santé d'Afrique de l'Ouest</p>
               </div>
               <div className="bg-emerald-900/40 p-2.5 rounded-xl border border-emerald-800/60">
                 <p className="font-bold text-emerald-300">🔒 Sécurité d'Accès</p>
