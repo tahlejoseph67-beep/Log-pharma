@@ -169,6 +169,17 @@ interface PharmacyInfo {
   ameliAgreement: string;
 }
 
+interface NetworkPharmacy {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+  medicines: Medicine[];
+  isGuard: boolean;
+  guardDetails?: string;
+}
+
 const INITIAL_PHARMACY_INFO: PharmacyInfo = {
   companyName: "LOG PHARMA OFFICINE",
   pharmacyName: "PHARMACIE DE LA MAIRIE",
@@ -455,6 +466,111 @@ export default function App() {
   const [deleteStartDate, setDeleteStartDate] = useState<string>('');
   const [deleteEndDate, setDeleteEndDate] = useState<string>('');
 
+  // Public routing and network state
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    return window.location.pathname;
+  });
+
+  const [networkPharmacies, setNetworkPharmacies] = useState<NetworkPharmacy[]>(() => {
+    const saved = localStorage.getItem('pharma_network_pharmacies');
+    if (saved) return JSON.parse(saved);
+    
+    // Seed initial pharmacies with realistic stocks
+    return [
+      {
+        id: 'current-pharmacy',
+        name: "PHARMACIE DE LA MAIRIE",
+        address: "12 Place de la République, 75003 Paris",
+        phone: "01 42 77 56 43",
+        email: "contact@pharmaciemairie.fr",
+        medicines: [],
+        isGuard: true,
+        guardDetails: "Cette semaine (24h/24, 7j/7)"
+      },
+      {
+        id: 'pharmacy-2',
+        name: "PHARMACIE CENTRALE HAUSSMANN",
+        address: "7 Boulevard Haussmann, 75009 Paris",
+        phone: "01 45 22 98 76",
+        email: "info@pharmaciehaussmann.fr",
+        medicines: [
+          { id: 'm1', name: 'Paracétamol Biogaran 500mg', cip: '340093848206', category: 'Antalgique', buyingPrice: 0.95, sellingPrice: 2.10, quantity: 80, minAlertQty: 10, expiryDate: '2028-04-12', location: 'Rayon A-1', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' },
+          { id: 'm2', name: 'Amoxicilline Sandoz 1g', cip: '340093319020', category: 'Antibiotique', buyingPrice: 2.80, sellingPrice: 5.50, quantity: 4, minAlertQty: 5, expiryDate: '2026-09-18', location: 'Rayon B-4', requiresPrescription: true, unit: 'Boite', unitSymbol: 'b' },
+          { id: 'm3', name: 'Ibuprofène UPSA 400mg', cip: '340093617320', category: 'Anti-inflammatoire', buyingPrice: 1.10, sellingPrice: 2.80, quantity: 30, minAlertQty: 5, expiryDate: '2026-06-15', location: 'Rayon A-3', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' }
+        ],
+        isGuard: false,
+        guardDetails: ""
+      },
+      {
+        id: 'pharmacy-3',
+        name: "PHARMACIE SAINT-GERMAIN DES PRÉS",
+        address: "145 Boulevard Saint-Germain, 75006 Paris",
+        phone: "01 43 54 12 34",
+        email: "stgermain@pharmacie-reseau.fr",
+        medicines: [
+          { id: 'm1', name: 'Paracétamol Biogaran 500mg', cip: '340093848206', category: 'Antalgique', buyingPrice: 0.95, sellingPrice: 2.30, quantity: 200, minAlertQty: 10, expiryDate: '2028-04-12', location: 'Rayon A-1', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' },
+          { id: 'm2', name: 'Amoxicilline Sandoz 1g', cip: '340093319020', category: 'Antibiotique', buyingPrice: 2.80, sellingPrice: 5.25, quantity: 25, minAlertQty: 5, expiryDate: '2026-09-18', location: 'Rayon B-4', requiresPrescription: true, unit: 'Boite', unitSymbol: 'b' },
+          { id: 'm5', name: 'Gaviscon Menthe Flacon', cip: '340093551020', category: 'Gastro-entérologie', buyingPrice: 2.40, sellingPrice: 4.80, quantity: 50, minAlertQty: 5, expiryDate: '2026-06-10', location: 'Rayon D-1', requiresPrescription: false, unit: 'Flacon', unitSymbol: 'fl' }
+        ],
+        isGuard: true,
+        guardDetails: "Week-end & Jours Fériés"
+      }
+    ];
+  });
+
+  const [showAddPharmacyModal, setShowAddPharmacyModal] = useState<boolean>(false);
+  const [showEditPharmacyModal, setShowEditPharmacyModal] = useState<boolean>(false);
+  const [editingPharmacy, setEditingPharmacy] = useState<NetworkPharmacy | null>(null);
+
+  // Search states for public views
+  const [publicGuardSearch, setPublicGuardSearch] = useState<string>('');
+  const [publicGuardOnlyActive, setPublicGuardOnlyActive] = useState<boolean>(false);
+
+  const [publicMedSearch, setPublicMedSearch] = useState<string>('');
+  const [publicMedCategory, setPublicMedCategory] = useState<string>('');
+  const [publicMedStockOnly, setPublicMedStockOnly] = useState<boolean>(false);
+
+  // URL Routing Sync
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
+  const navigateToPath = (path: string) => {
+    window.history.pushState(null, '', path);
+    setCurrentPath(path);
+    playBeep();
+  };
+
+  // Sync current active pharmacy profile and stock dynamically to the network
+  useEffect(() => {
+    setNetworkPharmacies(prev => {
+      return prev.map(p => {
+        if (p.id === 'current-pharmacy') {
+          return {
+            ...p,
+            name: pharmacyInfo.pharmacyName || "PHARMACIE DE LA MAIRIE",
+            address: pharmacyInfo.address || "12 Place de la République, 75003 Paris",
+            phone: pharmacyInfo.phone || "01 42 77 56 43",
+            email: pharmacyInfo.email || "contact@pharmaciemairie.fr",
+            medicines: medicines
+          };
+        }
+        return p;
+      });
+    });
+  }, [medicines, pharmacyInfo]);
+
+  // Persistent Save for Network
+  useEffect(() => {
+    localStorage.setItem('pharma_network_pharmacies', JSON.stringify(networkPharmacies));
+  }, [networkPharmacies]);
+
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [editingMaternityRecord, setEditingMaternityRecord] = useState<MaternityRecord | null>(null);
   const [editingDispensaryRecord, setEditingDispensaryRecord] = useState<DispensaryRecord | null>(null);
@@ -479,7 +595,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('pharma_laboratory', JSON.stringify(laboratoryRecords)); }, [laboratoryRecords]);
   useEffect(() => { localStorage.setItem('pharma_deleted_medicines', JSON.stringify(deletedMedicineRecords)); }, [deletedMedicineRecords]);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire' | 'laboratoire' | 'guide'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos' | 'stock' | 'personnel' | 'partenaires' | 'clients' | 'depenses' | 'maternite' | 'dispensaire' | 'laboratoire' | 'guide' | 'network_guard'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => localStorage.getItem('pharma_sidebar_collapsed') === 'true');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
@@ -2249,13 +2365,13 @@ export default function App() {
   };
 
   const allowedTabsForRoles: Record<string, string[]> = {
-    'Admin': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide'],
-    'Pharmacien Titulaire': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide'],
+    'Admin': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide', 'network_guard'],
+    'Pharmacien Titulaire': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide', 'network_guard'],
     'Pharmacien Adjoint': ['pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
     'Préparateur': ['pos', 'stock', 'clients', 'depenses', 'guide'],
     'Stagiaire': ['pos', 'clients', 'depenses', 'guide'],
     'Conseiller': ['pos', 'clients', 'depenses', 'guide'],
-    'Médecin Chef': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide'],
+    'Médecin Chef': ['dashboard', 'pos', 'stock', 'personnel', 'partenaires', 'clients', 'depenses', 'guide', 'network_guard'],
     'IDE Major Central': ['dashboard', 'pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
     'IDE Major Adjoint': ['pos', 'stock', 'clients', 'depenses', 'guide'],
     'Comptable': ['dashboard', 'pos', 'stock', 'partenaires', 'clients', 'depenses', 'guide'],
@@ -2283,6 +2399,744 @@ export default function App() {
     const allowedTabs = allowedTabsForRoles[role] || ['pos', 'clients', 'depenses', 'guide'];
     return allowedTabs.includes(tabId);
   };
+
+  // Public Header Component
+  const renderPublicHeader = (currentUrlPath: string) => {
+    return (
+      <div className="bg-slate-900 text-slate-100 py-3 px-4 border-b border-slate-800 shadow-md">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-500 text-white w-8 h-8 rounded-lg flex items-center justify-center font-black text-base shadow-sm">
+              +
+            </div>
+            <div>
+              <span className="font-extrabold tracking-wider text-sm block">LOG PHARMA <span className="text-emerald-400 font-bold text-xs uppercase">Portail Public</span></span>
+              <span className="text-[10px] text-slate-400 block font-mono">Lien actif : <span className="text-emerald-400 font-bold">{currentUrlPath}</span></span>
+            </div>
+          </div>
+          
+          {/* Navigation links */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button 
+              onClick={() => navigateToPath('/pharmacie-garde')}
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                currentUrlPath === '/pharmacie-garde' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              🏥 Pharmacies de Garde
+            </button>
+            <button 
+              onClick={() => navigateToPath('/medicaments')}
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                currentUrlPath === '/medicaments' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              🔍 Rechercher Médicaments
+            </button>
+            <button 
+              onClick={() => navigateToPath('/')}
+              className="px-3 py-1.5 rounded-lg font-bold text-xs bg-slate-800 text-emerald-400 hover:bg-slate-700 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              🔑 Connexion Pro
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 1. PUBLIC ON-DUTY PHARMACIES PAGE
+  const renderPublicGuardPage = () => {
+    const guards = networkPharmacies.filter(p => {
+      if (publicGuardOnlyActive && !p.isGuard) return false;
+      if (publicGuardSearch.trim() !== '') {
+        const q = publicGuardSearch.toLowerCase();
+        return p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q) || p.phone.includes(q);
+      }
+      return true;
+    });
+
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+        {renderPublicHeader('/pharmacie-garde')}
+        
+        <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+          {/* Hero section */}
+          <div className="bg-emerald-950 text-white rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-lg" style={{ backgroundImage: 'radial-gradient(circle at top right, #064e3b, #022c22)' }}>
+            <div className="relative z-10 max-w-2xl space-y-3">
+              <span className="bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">🏥 Service National d'Urgence</span>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Pharmacies de Garde Ouvertes</h2>
+              <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                Trouvez instantanément la pharmacie de garde actuellement ouverte près de chez vous en dehors des horaires d'ouverture habituels (nuits, dimanches et jours fériés).
+              </p>
+            </div>
+            <div className="absolute right-0 bottom-0 top-0 opacity-10 hidden md:flex items-center justify-center p-6 text-[120px]">
+              🏥
+            </div>
+          </div>
+
+          {/* Filters & search */}
+          <div className="bg-white rounded-xl border border-slate-200/60 p-4 shadow-3xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="relative flex-1">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none">
+                <Search size={16} />
+              </span>
+              <input 
+                type="text"
+                placeholder="Rechercher une pharmacie par son nom, adresse ou numéro..."
+                value={publicGuardSearch}
+                onChange={(e) => setPublicGuardSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-850 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                <input 
+                  type="checkbox"
+                  checked={publicGuardOnlyActive}
+                  onChange={(e) => setPublicGuardOnlyActive(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                />
+                <span>Uniquement de Garde Active</span>
+              </label>
+              <div className="text-[11px] font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
+                {guards.length} Pharmacie(s)
+              </div>
+            </div>
+          </div>
+
+          {/* List layout */}
+          {guards.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/50 p-12 text-center max-w-md mx-auto space-y-3">
+              <div className="text-4xl">📭</div>
+              <h3 className="font-bold text-sm text-slate-800">Aucune pharmacie trouvée</h3>
+              <p className="text-xs text-slate-500">Essayez de modifier votre recherche ou de désactiver le filtre de garde active.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {guards.map((pharmacy) => (
+                <div 
+                  key={pharmacy.id} 
+                  className={`bg-white rounded-2xl border transition-all p-5 shadow-3xs flex flex-col justify-between hover:shadow-xs hover:-translate-y-0.5 ${
+                    pharmacy.isGuard 
+                      ? 'border-emerald-500/40 ring-1 ring-emerald-500/20' 
+                      : 'border-slate-200/60'
+                  }`}
+                >
+                  <div className="space-y-4">
+                    {/* Header */}
+                    <div className="flex justify-between items-start gap-3">
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-900 tracking-tight">{pharmacy.name}</h3>
+                        <p className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase mt-0.5">ID: {pharmacy.id === 'current-pharmacy' ? 'LOG PHARMA OFFICINE' : pharmacy.id}</p>
+                      </div>
+                      {pharmacy.isGuard ? (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                          De Garde
+                        </span>
+                      ) : (
+                        <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0">
+                          Fermée
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Details list */}
+                    <div className="space-y-2 text-xs text-slate-600 border-t border-slate-100 pt-3">
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 shrink-0 w-4">📍</span>
+                        <span className="font-medium text-slate-700">{pharmacy.address}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 shrink-0 w-4">📞</span>
+                        <span className="font-mono font-bold text-slate-800">{pharmacy.phone}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 shrink-0 w-4">✉️</span>
+                        <span className="font-mono text-slate-500 break-all">{pharmacy.email}</span>
+                      </div>
+                    </div>
+
+                    {pharmacy.isGuard && pharmacy.guardDetails && (
+                      <div className="bg-emerald-50/50 border border-emerald-100/60 rounded-xl p-3 text-xs text-emerald-950 font-medium space-y-1">
+                        <div className="text-[10px] uppercase font-black tracking-wider text-emerald-800">📅 Calendrier de garde :</div>
+                        <p className="italic">{pharmacy.guardDetails}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 mt-4 flex gap-2">
+                    <a 
+                      href={`tel:${pharmacy.phone}`} 
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-center text-xs transition-all shadow-3xs hover:scale-[1.01] active:scale-[0.99]"
+                    >
+                      📞 Appeler
+                    </a>
+                    <a 
+                      href={`https://maps.google.com/?q=${encodeURIComponent(pharmacy.name + ' ' + pharmacy.address)}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-center text-xs transition-all flex items-center justify-center border"
+                    >
+                      🗺️ Carte
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-900 border-t border-slate-800 text-slate-500 py-6 text-center text-[10px] font-medium px-4">
+          <p>© 2026 LOG PHARMA • Réseau national interconnecté de garde publique.</p>
+          <p className="mt-1">Mis à jour en temps réel par les administrateurs d'officine agréés.</p>
+        </div>
+      </div>
+    );
+  };
+
+  // 2. PUBLIC MEDICINE SEARCH, STOCK & PRICE LOOKUP PAGE
+  const renderPublicMedicinesPage = () => {
+    // Collect all matches across the network
+    const matches: { pharmacy: NetworkPharmacy; med: Medicine }[] = [];
+    
+    networkPharmacies.forEach(pharmacy => {
+      const listToSearch = pharmacy.medicines || [];
+      listToSearch.forEach(m => {
+        // Apply filters
+        if (publicMedSearch.trim() !== '') {
+          const q = publicMedSearch.toLowerCase();
+          const matchName = m.name.toLowerCase().includes(q);
+          const matchCip = m.cip.toLowerCase().includes(q);
+          if (!matchName && !matchCip) return;
+        }
+        
+        if (publicMedCategory && m.category !== publicMedCategory) {
+          return;
+        }
+        
+        if (publicMedStockOnly && (!m.quantity || m.quantity <= 0)) {
+          return;
+        }
+        
+        matches.push({ pharmacy, med: m });
+      });
+    });
+
+    // Unique categories from all medicines
+    const categoriesSet = new Set<string>();
+    networkPharmacies.forEach(p => {
+      (p.medicines || []).forEach(m => {
+        if (m.category) categoriesSet.add(m.category);
+      });
+    });
+    const allCategories = Array.from(categoriesSet);
+
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+        {renderPublicHeader('/medicaments')}
+        
+        <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+          {/* Hero header */}
+          <div className="bg-emerald-950 text-white rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-lg" style={{ backgroundImage: 'radial-gradient(circle at top right, #047857, #064e3b, #022c22)' }}>
+            <div className="relative z-10 max-w-2xl space-y-3">
+              <span className="bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">📦 Moteur National d'Interconnexion des Stocks</span>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Recherche de Médicaments & Prix</h2>
+              <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                Recherchez la disponibilité, comparez les prix de vente homologués, et localisez instantanément l'officine disposant du produit à acheter par un patient.
+              </p>
+            </div>
+            <div className="absolute right-0 bottom-0 top-0 opacity-10 hidden md:flex items-center justify-center p-6 text-[120px]">
+              🔍
+            </div>
+          </div>
+
+          {/* Search Bar Panel */}
+          <div className="bg-white rounded-xl border border-slate-200/60 p-5 shadow-3xs space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Query search */}
+              <div className="md:col-span-1 relative">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Nom ou CIP du médicament</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 pointer-events-none">
+                    <Search size={14} />
+                  </span>
+                  <input 
+                    type="text"
+                    placeholder="Ex : Paracétamol, Amoxicilline, CIP..."
+                    value={publicMedSearch}
+                    onChange={(e) => setPublicMedSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* Category selector */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Catégorie Médicale</label>
+                <select 
+                  value={publicMedCategory}
+                  onChange={(e) => setPublicMedCategory(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs text-slate-800 font-semibold"
+                >
+                  <option value="">Toutes les catégories</option>
+                  {allCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stock filter & count info */}
+              <div className="flex items-end justify-between">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none pb-2">
+                  <input 
+                    type="checkbox"
+                    checked={publicMedStockOnly}
+                    onChange={(e) => setPublicMedStockOnly(e.target.checked)}
+                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                  />
+                  <span>En stock uniquement</span>
+                </label>
+                
+                <div className="text-[11px] font-black text-slate-500 bg-slate-100 px-3.5 py-2 rounded-lg">
+                  {matches.length} Résultat(s)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Matches List Grid */}
+          {matches.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/50 p-12 text-center max-w-md mx-auto space-y-3">
+              <div className="text-4xl">💊</div>
+              <h3 className="font-bold text-sm text-slate-800">Aucun produit ou stock correspondant</h3>
+              <p className="text-xs text-slate-500">Essayez de saisir un nom plus générique ou de désélectionner les filtres de stock actif.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {matches.map(({ pharmacy, med }, idx) => {
+                const isOutOfStock = !med.quantity || med.quantity <= 0;
+                
+                return (
+                  <div 
+                    key={pharmacy.id + '-' + med.id + '-' + idx} 
+                    className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-3xs flex flex-col justify-between hover:shadow-xs hover:border-slate-300 transition-all"
+                  >
+                    <div className="space-y-4">
+                      {/* Brand Info & Category Badge */}
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 rounded text-[8px] font-extrabold tracking-wider uppercase">
+                          {med.category || 'Général'}
+                        </span>
+                        
+                        <div className="text-right">
+                          <span className="text-[9px] text-slate-400 font-semibold block">Prix de Vente</span>
+                          <span className="text-sm font-black text-emerald-800 font-mono">
+                            {med.sellingPrice.toFixed(2)} FCFA
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Medicine details */}
+                      <div>
+                        <h3 className="font-black text-xs text-slate-900 leading-tight flex items-center gap-1.5">
+                          <span>💊</span>
+                          <span>{med.name}</span>
+                        </h3>
+                        <p className="text-[10px] font-mono text-slate-400 mt-1">CODE CIP : {med.cip || 'N/A'} {med.requiresPrescription && <span className="text-red-500 font-bold ml-1.5">(Ordonnance Requis)</span>}</p>
+                      </div>
+
+                      {/* Stock availability banner */}
+                      <div className="flex items-center justify-between bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-[10px] text-slate-500 font-semibold">Disponibilité :</span>
+                        {isOutOfStock ? (
+                          <span className="bg-red-50 text-red-600 border border-red-100 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase">
+                            ❌ Stock Épuisé
+                          </span>
+                        ) : (
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                            Disponible : {med.quantity} {med.unitSymbol || 'b'} ({med.unit || 'Boite'})
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Pharmacy Location block */}
+                      <div className="bg-emerald-950 text-white rounded-xl p-3.5 space-y-2 relative overflow-hidden shadow-3xs">
+                        <div className="text-[8px] text-emerald-300 font-black tracking-wider uppercase">OFFICINE PROPRIÉTAIRE :</div>
+                        <div className="space-y-1">
+                          <h4 className="font-extrabold text-[11px] text-white flex items-center gap-1">
+                            <span>🏛️</span>
+                            <span>{pharmacy.name}</span>
+                          </h4>
+                          <p className="text-[10px] text-emerald-100/80 leading-snug">{pharmacy.address}</p>
+                          <p className="text-[9px] font-mono text-emerald-200/85">📞 {pharmacy.phone} | ✉️ {pharmacy.email}</p>
+                        </div>
+                        {pharmacy.isGuard && (
+                          <span className="absolute top-2.5 right-2.5 bg-emerald-500 text-white text-[7px] font-black uppercase px-1.5 py-0.5 rounded shadow-2xs">
+                            🔥 De Garde
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 mt-4 flex gap-2">
+                      <a 
+                        href={`tel:${pharmacy.phone}`}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 rounded-lg text-center text-[11px] transition-all"
+                      >
+                        📞 Acheter / Réserver
+                      </a>
+                      <a 
+                        href={`https://maps.google.com/?q=${encodeURIComponent(pharmacy.name + ' ' + pharmacy.address)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-slate-100 hover:bg-slate-200 border text-slate-700 px-3 py-2 rounded-lg text-center text-[11px] transition-all flex items-center justify-center"
+                      >
+                        📍 Itinéraire
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-900 border-t border-slate-800 text-slate-500 py-6 text-center text-[10px] font-medium px-4">
+          <p>© 2026 LOG PHARMA • Réseau national d'interconnexion des stocks d'officines.</p>
+          <p className="mt-1 font-mono text-slate-600">Recherche de stock exécutée à travers {networkPharmacies.length} serveurs d'administration d'entreprises.</p>
+        </div>
+      </div>
+    );
+  };
+
+  // Admin form state hooks for network pharmacies management
+  const [newPharmaName, setNewPharmaName] = useState('');
+  const [newPharmaAddress, setNewPharmaAddress] = useState('');
+  const [newPharmaPhone, setNewPharmaPhone] = useState('');
+  const [newPharmaEmail, setNewPharmaEmail] = useState('');
+  const [newPharmaIsGuard, setNewPharmaIsGuard] = useState(false);
+  const [newPharmaGuardDetails, setNewPharmaGuardDetails] = useState('');
+
+  const [editPharmaName, setEditPharmaName] = useState('');
+  const [editPharmaAddress, setEditPharmaAddress] = useState('');
+  const [editPharmaPhone, setEditPharmaPhone] = useState('');
+  const [editPharmaEmail, setEditPharmaEmail] = useState('');
+  const [editPharmaIsGuard, setEditPharmaIsGuard] = useState(false);
+  const [editPharmaGuardDetails, setEditPharmaGuardDetails] = useState('');
+
+  useEffect(() => {
+    if (editingPharmacy) {
+      setEditPharmaName(editingPharmacy.name);
+      setEditPharmaAddress(editingPharmacy.address);
+      setEditPharmaPhone(editingPharmacy.phone);
+      setEditPharmaEmail(editingPharmacy.email);
+      setEditPharmaIsGuard(editingPharmacy.isGuard);
+      setEditPharmaGuardDetails(editingPharmacy.guardDetails || '');
+    }
+  }, [editingPharmacy]);
+
+  const handleAddPharmacy = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPharmaName || !newPharmaAddress || !newPharmaPhone) {
+      alert("Veuillez remplir au moins le nom, l'adresse et le téléphone de la pharmacie.");
+      return;
+    }
+    const newPharma: NetworkPharmacy = {
+      id: 'pharmacy-' + Date.now(),
+      name: newPharmaName,
+      address: newPharmaAddress,
+      phone: newPharmaPhone,
+      email: newPharmaEmail || `${newPharmaName.toLowerCase().replace(/\s+/g, '')}@pharma-reseau.fr`,
+      medicines: [
+        // Seed realistic medicines stock lists for demonstration of stock aggregation & comparison
+        { id: 'm1', name: 'Paracétamol Biogaran 500mg', cip: '340093848206', category: 'Antalgique', buyingPrice: 0.95, sellingPrice: 2.15, quantity: 50, minAlertQty: 10, expiryDate: '2028-04-12', location: 'Rayon A-1', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' },
+        { id: 'm2', name: 'Amoxicilline Sandoz 1g', cip: '340093319020', category: 'Antibiotique', buyingPrice: 2.80, sellingPrice: 5.40, quantity: 12, minAlertQty: 5, expiryDate: '2026-09-18', location: 'Rayon B-4', requiresPrescription: true, unit: 'Boite', unitSymbol: 'b' },
+        { id: 'm3', name: 'Ibuprofène UPSA 400mg', cip: '340093617320', category: 'Anti-inflammatoire', buyingPrice: 1.10, sellingPrice: 2.90, quantity: 20, minAlertQty: 5, expiryDate: '2026-06-15', location: 'Rayon A-3', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' }
+      ],
+      isGuard: newPharmaIsGuard,
+      guardDetails: newPharmaGuardDetails
+    };
+
+    setNetworkPharmacies(prev => [...prev, newPharma]);
+    setShowAddPharmacyModal(false);
+    
+    // reset form fields
+    setNewPharmaName('');
+    setNewPharmaAddress('');
+    setNewPharmaPhone('');
+    setNewPharmaEmail('');
+    setNewPharmaIsGuard(false);
+    setNewPharmaGuardDetails('');
+    playBeep();
+  };
+
+  const handleEditPharmacy = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPharmacy) return;
+    
+    setNetworkPharmacies(prev => prev.map(p => {
+      if (p.id === editingPharmacy.id) {
+        return {
+          ...p,
+          name: editPharmaName,
+          address: editPharmaAddress,
+          phone: editPharmaPhone,
+          email: editPharmaEmail,
+          isGuard: editPharmaIsGuard,
+          guardDetails: editPharmaGuardDetails
+        };
+      }
+      return p;
+    }));
+
+    setShowEditPharmacyModal(false);
+    setEditingPharmacy(null);
+    playBeep();
+  };
+
+  const renderNetworkGuardSection = () => {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>🏛️</span> Gestion du Réseau & Pharmacies de Garde
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Gérez les pharmacies interconnectées visibles au public, publiez les gardes (/pharmacie-garde) et centralisez la recherche de stocks (/medicaments).
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => { playBeep(); setShowAddPharmacyModal(true); }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all shadow-3xs cursor-pointer select-none"
+            >
+              ➕ Ajouter une Pharmacie
+            </button>
+            <button 
+              onClick={() => { playBeep(); window.open('/pharmacie-garde', '_blank'); }}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 border text-xs font-bold px-4 py-2 rounded-lg transition-all flex items-center gap-1 cursor-pointer select-none"
+            >
+              🌐 Voir Page Publique
+            </button>
+          </div>
+        </div>
+
+        {/* Public Url Info card */}
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <h4 className="font-bold text-xs text-emerald-800">🏥 Page Publique des Gardes</h4>
+            <p className="text-xs text-emerald-950/85">Accessible publiquement sans authentification pour les patients en urgence.</p>
+            <div className="flex items-center gap-2">
+              <span className="font-mono bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded text-[10px] font-bold select-all">/pharmacie-garde</span>
+              <button onClick={() => navigateToPath('/pharmacie-garde')} className="text-emerald-600 hover:text-emerald-800 text-[10px] font-bold underline cursor-pointer">Visiter</button>
+            </div>
+          </div>
+          <div className="space-y-1.5 border-t md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-4">
+            <h4 className="font-bold text-xs text-emerald-800">🔍 Page Publique de Recherche Médicaments</h4>
+            <p className="text-xs text-emerald-950/85">Regroupe et agrège en temps réel les stocks et prix de toutes les officines du réseau.</p>
+            <div className="flex items-center gap-2">
+              <span className="font-mono bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded text-[10px] font-bold select-all">/medicaments</span>
+              <button onClick={() => navigateToPath('/medicaments')} className="text-emerald-600 hover:text-emerald-800 text-[10px] font-bold underline cursor-pointer">Visiter</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Network Pharmacies Table */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-3xs">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b">
+                <th className="p-3.5">Pharmacie</th>
+                <th className="p-3.5">Coordonnées & Adresse</th>
+                <th className="p-3.5">Statut de Garde</th>
+                <th className="p-3.5 text-center">Médicaments en Stock</th>
+                <th className="p-3.5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs">
+              {networkPharmacies.map((pharmacy) => {
+                const totalMedCount = pharmacy.id === 'current-pharmacy' ? medicines.length : (pharmacy.medicines || []).length;
+                
+                return (
+                  <tr key={pharmacy.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-3.5 font-bold text-slate-900">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-lg">🏛️</span>
+                        <div>
+                          <p>{pharmacy.name}</p>
+                          {pharmacy.id === 'current-pharmacy' && (
+                            <span className="bg-blue-50 text-blue-700 text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-blue-100">Cette Officine (Sync Active)</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-3.5 text-slate-600 space-y-0.5">
+                      <p className="font-medium text-slate-700">{pharmacy.address}</p>
+                      <p className="font-mono text-[10px]">📞 {pharmacy.phone} | ✉️ {pharmacy.email}</p>
+                    </td>
+                    <td className="p-3.5">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => {
+                            playBeep();
+                            setNetworkPharmacies(prev => prev.map(p => p.id === pharmacy.id ? { ...p, isGuard: !p.isGuard } : p));
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 transition-all flex items-center gap-1 border cursor-pointer select-none ${
+                            pharmacy.isGuard 
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                              : 'bg-slate-100 text-slate-500 border-slate-200'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${pharmacy.isGuard ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                          {pharmacy.isGuard ? 'De Garde Active' : 'Inactif / Fermé'}
+                        </button>
+                        {pharmacy.isGuard && (
+                          <span className="text-[10px] text-slate-400 truncate max-w-40 font-medium italic">"{pharmacy.guardDetails || 'S/O'}"</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3.5 text-center font-bold text-slate-800">
+                      <span className="bg-slate-100 px-2.5 py-1 rounded-full text-xs">
+                        {totalMedCount} produits
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-right space-x-1 shrink-0">
+                      <button 
+                        onClick={() => {
+                          playBeep();
+                          setEditingPharmacy(pharmacy);
+                          setShowEditPharmacyModal(true);
+                        }}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded text-[10px] cursor-pointer"
+                      >
+                        ✏️ Éditer
+                      </button>
+                      
+                      {pharmacy.id !== 'current-pharmacy' && (
+                        <button 
+                          onClick={() => {
+                            if (confirm(`Confirmez-vous la suppression définitive de la pharmacie "${pharmacy.name}" du réseau ?`)) {
+                              playBeep();
+                              setNetworkPharmacies(prev => prev.filter(p => p.id !== pharmacy.id));
+                            }
+                          }}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2.5 py-1.5 rounded text-[10px] cursor-pointer border border-red-100"
+                        >
+                          🗑️ Supprimer
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ADD PHARMACY MODAL */}
+        {showAddPharmacyModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
+                <h3 className="font-bold text-xs uppercase tracking-wider">➕ Ajouter une pharmacie au réseau</h3>
+                <button type="button" onClick={() => { playBeep(); setShowAddPharmacyModal(false); }} className="text-slate-400 hover:text-white cursor-pointer font-bold">✕</button>
+              </div>
+              <form onSubmit={handleAddPharmacy} className="p-5 space-y-4 text-xs">
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700">Nom de l'officine *</label>
+                  <input required type="text" value={newPharmaName} onChange={e => setNewPharmaName(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" placeholder="Ex: PHARMACIE DU CENTRE" />
+                </div>
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700">Adresse Complète *</label>
+                  <input required type="text" value={newPharmaAddress} onChange={e => setNewPharmaAddress(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" placeholder="Ex: 45 Rue de la Paix, 75002 Paris" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-700">Téléphone *</label>
+                    <input required type="text" value={newPharmaPhone} onChange={e => setNewPharmaPhone(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-mono" placeholder="Ex: 01 42 33 44 55" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-700">Email de contact</label>
+                    <input type="email" value={newPharmaEmail} onChange={e => setNewPharmaEmail(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-mono" placeholder="Ex: contact@pharmacie.fr" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 py-1">
+                  <input type="checkbox" id="addIsGuard" checked={newPharmaIsGuard} onChange={e => setNewPharmaIsGuard(e.target.checked)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4" />
+                  <label htmlFor="addIsGuard" className="font-bold text-slate-700 cursor-pointer select-none">Mettre de Garde activement</label>
+                </div>
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700">Précisions de garde / Calendrier</label>
+                  <input type="text" value={newPharmaGuardDetails} onChange={e => setNewPharmaGuardDetails(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" placeholder="Ex: Du lundi au samedi de 20h à 8h" />
+                </div>
+                <div className="pt-2 border-t flex gap-2 justify-end">
+                  <button type="button" onClick={() => { playBeep(); setShowAddPharmacyModal(false); }} className="bg-slate-100 hover:bg-slate-200 font-bold px-4 py-2 rounded text-slate-700 cursor-pointer">Annuler</button>
+                  <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded shadow-3xs cursor-pointer">Enregistrer</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT PHARMACY MODAL */}
+        {showEditPharmacyModal && editingPharmacy && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
+                <h3 className="font-bold text-xs uppercase tracking-wider">✏️ Modifier la pharmacie du réseau</h3>
+                <button type="button" onClick={() => { playBeep(); setShowEditPharmacyModal(false); setEditingPharmacy(null); }} className="text-slate-400 hover:text-white cursor-pointer font-bold">✕</button>
+              </div>
+              <form onSubmit={handleEditPharmacy} className="p-5 space-y-4 text-xs">
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700">Nom de l'officine *</label>
+                  <input required type="text" value={editPharmaName} onChange={e => setEditPharmaName(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" />
+                </div>
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700">Adresse Complète *</label>
+                  <input required type="text" value={editPharmaAddress} onChange={e => setEditPharmaAddress(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-700">Téléphone *</label>
+                    <input required type="text" value={editPharmaPhone} onChange={e => setEditPharmaPhone(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-700">Email de contact</label>
+                    <input type="email" value={editPharmaEmail} onChange={e => setEditPharmaEmail(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-mono" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 py-1">
+                  <input type="checkbox" id="editIsGuard" checked={editPharmaIsGuard} onChange={e => setEditPharmaIsGuard(e.target.checked)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4" />
+                  <label htmlFor="editIsGuard" className="font-bold text-slate-700 cursor-pointer select-none">Mettre de Garde activement</label>
+                </div>
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700">Précisions de garde / Calendrier</label>
+                  <input type="text" value={editPharmaGuardDetails} onChange={e => setEditPharmaGuardDetails(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" />
+                </div>
+                <div className="pt-2 border-t flex gap-2 justify-end">
+                  <button type="button" onClick={() => { playBeep(); setShowEditPharmacyModal(false); setEditingPharmacy(null); }} className="bg-slate-100 hover:bg-slate-200 font-bold px-4 py-2 rounded text-slate-700 cursor-pointer">Annuler</button>
+                  <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded shadow-3xs cursor-pointer">Enregistrer les modifications</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Public routing render intercept
+  if (currentPath === '/pharmacie-garde' || currentPath === '/pharmacie-garde/') {
+    return renderPublicGuardPage();
+  }
+  if (currentPath === '/medicaments' || currentPath === '/medicaments/') {
+    return renderPublicMedicinesPage();
+  }
 
   const userRole = currentUser?.role || 'Stagiaire';
   const isTabAuthorized = currentUser ? isTabAllowed(activeTab, currentUser.role, currentUser.id) : false;
@@ -2494,6 +3348,7 @@ export default function App() {
                 { id: 'maternite', label: 'Compta Maternité', icon: Heart, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessMaternity },
                 { id: 'dispensaire', label: 'Compta Dispensaire', icon: Activity, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessDispensary },
                 { id: 'laboratoire', label: 'Compta Laboratoire', icon: FlaskConical, roles: [] as string[], forceShow: isAdmin || !!employees.find(emp => emp.id === currentUser?.id)?.canAccessLaboratory },
+                { id: 'network_guard', label: 'Réseau & Gardes', icon: Database, roles: ['Admin', 'Pharmacien Titulaire'] },
                 { id: 'guide', label: "Guide d'Utilisation", icon: BookOpen, roles: ['Admin', 'Pharmacien Titulaire', 'Pharmacien Adjoint', 'Préparateur', 'Stagiaire', 'Conseiller'] },
               ].filter(tab => !currentUser || isTabAllowed(tab.id, currentUser.role, currentUser.id)).map((tab) => {
                 const Icon = tab.icon;
@@ -5697,6 +6552,13 @@ export default function App() {
             </div>
           );
         })()}
+
+        {/* --- TABS 12: RESEAU & PHARMACIES DE GARDE --- */}
+        {activeTab === 'network_guard' && (
+          <div className="bg-white rounded-2xl border p-6 shadow-xs max-w-7xl mx-auto space-y-6">
+            {renderNetworkGuardSection()}
+          </div>
+        )}
 
         {/* --- TABS 11: GUIDE D'UTILISATION --- */}
         {activeTab === 'guide' && (
