@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { GuideSection } from './components/GuideSection';
+import { InteractiveLeafletMap } from './components/InteractiveLeafletMap';
 import { 
   Building2, 
   Users, 
@@ -167,6 +168,8 @@ interface PharmacyInfo {
   rppsSIRET: string;
   agreement: string;
   ameliAgreement: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface NetworkPharmacy {
@@ -178,6 +181,8 @@ interface NetworkPharmacy {
   medicines: Medicine[];
   isGuard: boolean;
   guardDetails?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 const INITIAL_PHARMACY_INFO: PharmacyInfo = {
@@ -188,7 +193,9 @@ const INITIAL_PHARMACY_INFO: PharmacyInfo = {
   email: "contact@pharmaciemairie.fr",
   rppsSIRET: "Numéro RPPS : 10065432109 • SIRET : 410 552 123 00018",
   agreement: "Plateforme Logistique Officinale • Agrément ARS Île-de-France",
-  ameliAgreement: "Agrément CNAMPS Ameli N° 401552 - Télétransmission SESAM-Vitale directe."
+  ameliAgreement: "Agrément CNAMPS Ameli N° 401552 - Télétransmission SESAM-Vitale directe.",
+  latitude: 48.8675,
+  longitude: 2.3638
 };
 
 interface Expense {
@@ -485,7 +492,9 @@ export default function App() {
         email: "contact@pharmaciemairie.fr",
         medicines: [],
         isGuard: true,
-        guardDetails: "Cette semaine (24h/24, 7j/7)"
+        guardDetails: "Cette semaine (24h/24, 7j/7)",
+        latitude: 48.8675,
+        longitude: 2.3638
       },
       {
         id: 'pharmacy-2',
@@ -499,7 +508,9 @@ export default function App() {
           { id: 'm3', name: 'Ibuprofène UPSA 400mg', cip: '340093617320', category: 'Anti-inflammatoire', buyingPrice: 1.10, sellingPrice: 2.80, quantity: 30, minAlertQty: 5, expiryDate: '2026-06-15', location: 'Rayon A-3', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' }
         ],
         isGuard: false,
-        guardDetails: ""
+        guardDetails: "",
+        latitude: 48.8724,
+        longitude: 2.3330
       },
       {
         id: 'pharmacy-3',
@@ -513,18 +524,23 @@ export default function App() {
           { id: 'm5', name: 'Gaviscon Menthe Flacon', cip: '340093551020', category: 'Gastro-entérologie', buyingPrice: 2.40, sellingPrice: 4.80, quantity: 50, minAlertQty: 5, expiryDate: '2026-06-10', location: 'Rayon D-1', requiresPrescription: false, unit: 'Flacon', unitSymbol: 'fl' }
         ],
         isGuard: true,
-        guardDetails: "Week-end & Jours Fériés"
+        guardDetails: "Week-end & Jours Fériés",
+        latitude: 48.8532,
+        longitude: 2.3353
       }
     ];
   });
 
   const [showAddPharmacyModal, setShowAddPharmacyModal] = useState<boolean>(false);
   const [showEditPharmacyModal, setShowEditPharmacyModal] = useState<boolean>(false);
+  const [showAddMap, setShowAddMap] = useState<boolean>(false);
+  const [showEditMap, setShowEditMap] = useState<boolean>(false);
   const [editingPharmacy, setEditingPharmacy] = useState<NetworkPharmacy | null>(null);
 
   // Search states for public views
   const [publicGuardSearch, setPublicGuardSearch] = useState<string>('');
   const [publicGuardOnlyActive, setPublicGuardOnlyActive] = useState<boolean>(false);
+  const [activeRoutePharmacy, setActiveRoutePharmacy] = useState<NetworkPharmacy | null>(null);
 
   const [publicMedSearch, setPublicMedSearch] = useState<string>('');
   const [publicMedCategory, setPublicMedCategory] = useState<string>('');
@@ -558,7 +574,9 @@ export default function App() {
             address: pharmacyInfo.address || "12 Place de la République, 75003 Paris",
             phone: pharmacyInfo.phone || "01 42 77 56 43",
             email: pharmacyInfo.email || "contact@pharmaciemairie.fr",
-            medicines: medicines
+            medicines: medicines,
+            latitude: pharmacyInfo.latitude,
+            longitude: pharmacyInfo.longitude
           };
         }
         return p;
@@ -2566,18 +2584,27 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100 mt-4 flex gap-2">
+                  <div className="pt-4 border-t border-slate-100 mt-4 flex flex-col sm:flex-row gap-2">
                     <a 
                       href={`tel:${pharmacy.phone}`} 
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-center text-xs transition-all shadow-3xs hover:scale-[1.01] active:scale-[0.99]"
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-center text-xs transition-all shadow-3xs flex items-center justify-center gap-1 cursor-pointer"
                     >
                       📞 Appeler
                     </a>
+                    
+                    <button 
+                      onClick={() => { playBeep(); setActiveRoutePharmacy(pharmacy); }}
+                      className="flex-1 bg-slate-900 hover:bg-slate-850 text-emerald-400 font-bold py-2 rounded-xl text-center text-xs transition-all flex items-center justify-center gap-1 cursor-pointer select-none border border-slate-800"
+                    >
+                      📍 Itinéraire
+                    </button>
+
                     <a 
                       href={`https://maps.google.com/?q=${encodeURIComponent(pharmacy.name + ' ' + pharmacy.address)}`} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-center text-xs transition-all flex items-center justify-center border"
+                      className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-center text-xs transition-all flex items-center justify-center border cursor-pointer"
+                      title="Ouvrir dans Google Maps"
                     >
                       🗺️ Carte
                     </a>
@@ -2593,6 +2620,50 @@ export default function App() {
           <p>© 2026 LOG PHARMA • Réseau national interconnecté de garde publique.</p>
           <p className="mt-1">Mis à jour en temps réel par les administrateurs d'officine agréés.</p>
         </div>
+
+        {/* MODAL ITINÉRAIRE INTERACTIF PUBLIC */}
+        {activeRoutePharmacy && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-4xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="bg-slate-950 text-white p-5 flex justify-between items-center border-b border-slate-900 shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                    🏥 Itinéraire d'Urgence
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-white">{activeRoutePharmacy.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">{activeRoutePharmacy.address}</p>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => { playBeep(); setActiveRoutePharmacy(null); }} 
+                  className="bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white p-2 rounded-full cursor-pointer transition-all border border-slate-800"
+                >
+                  ✕ Fermer
+                </button>
+              </div>
+
+              {/* Map container */}
+              <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+                <InteractiveLeafletMap 
+                  mode="public"
+                  initialLat={activeRoutePharmacy.latitude || 48.8675}
+                  initialLng={activeRoutePharmacy.longitude || 2.3638}
+                  pharmacyName={activeRoutePharmacy.name}
+                  pharmacyAddress={activeRoutePharmacy.address}
+                />
+              </div>
+
+              {/* Footer info strip */}
+              <div className="bg-slate-900 border-t border-slate-800 text-slate-400 py-3.5 px-6 text-center text-[10px] font-mono flex flex-col sm:flex-row justify-between items-center gap-2 shrink-0">
+                <span>Réseau d'officines Log Pharma. Itinéraire piéton & automobile OSRM.</span>
+                <span className="text-emerald-400 font-bold">● Serveur Réseau En Ligne</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -2785,18 +2856,16 @@ export default function App() {
                     <div className="pt-4 border-t border-slate-100 mt-4 flex gap-2">
                       <a 
                         href={`tel:${pharmacy.phone}`}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 rounded-lg text-center text-[11px] transition-all"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 rounded-lg text-center text-[11px] transition-all flex items-center justify-center"
                       >
                         📞 Acheter / Réserver
                       </a>
-                      <a 
-                        href={`https://maps.google.com/?q=${encodeURIComponent(pharmacy.name + ' ' + pharmacy.address)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="bg-slate-100 hover:bg-slate-200 border text-slate-700 px-3 py-2 rounded-lg text-center text-[11px] transition-all flex items-center justify-center"
+                      <button 
+                        onClick={() => { playBeep(); setActiveRoutePharmacy(pharmacy); }}
+                        className="bg-slate-100 hover:bg-slate-200 border text-slate-700 px-3 py-2 rounded-lg text-center text-[11px] transition-all flex items-center justify-center cursor-pointer font-bold gap-1"
                       >
                         📍 Itinéraire
-                      </a>
+                      </button>
                     </div>
                   </div>
                 );
@@ -2810,6 +2879,50 @@ export default function App() {
           <p>© 2026 LOG PHARMA • Réseau national d'interconnexion des stocks d'officines.</p>
           <p className="mt-1 font-mono text-slate-600">Recherche de stock exécutée à travers {networkPharmacies.length} serveurs d'administration d'entreprises.</p>
         </div>
+
+        {/* MODAL ITINÉRAIRE INTERACTIF PUBLIC */}
+        {activeRoutePharmacy && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-4xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="bg-slate-950 text-white p-5 flex justify-between items-center border-b border-slate-900 shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                    🏥 Itinéraire d'Urgence
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-white">{activeRoutePharmacy.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">{activeRoutePharmacy.address}</p>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => { playBeep(); setActiveRoutePharmacy(null); }} 
+                  className="bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white p-2 rounded-full cursor-pointer transition-all border border-slate-800"
+                >
+                  ✕ Fermer
+                </button>
+              </div>
+
+              {/* Map container */}
+              <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+                <InteractiveLeafletMap 
+                  mode="public"
+                  initialLat={activeRoutePharmacy.latitude || 48.8675}
+                  initialLng={activeRoutePharmacy.longitude || 2.3638}
+                  pharmacyName={activeRoutePharmacy.name}
+                  pharmacyAddress={activeRoutePharmacy.address}
+                />
+              </div>
+
+              {/* Footer info strip */}
+              <div className="bg-slate-900 border-t border-slate-800 text-slate-400 py-3.5 px-6 text-center text-[10px] font-mono flex flex-col sm:flex-row justify-between items-center gap-2 shrink-0">
+                <span>Réseau d'officines Log Pharma. Itinéraire piéton & automobile OSRM.</span>
+                <span className="text-emerald-400 font-bold">● Serveur Réseau En Ligne</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -2821,6 +2934,8 @@ export default function App() {
   const [newPharmaEmail, setNewPharmaEmail] = useState('');
   const [newPharmaIsGuard, setNewPharmaIsGuard] = useState(false);
   const [newPharmaGuardDetails, setNewPharmaGuardDetails] = useState('');
+  const [newPharmaLat, setNewPharmaLat] = useState<number | undefined>(48.8675);
+  const [newPharmaLng, setNewPharmaLng] = useState<number | undefined>(2.3638);
 
   const [editPharmaName, setEditPharmaName] = useState('');
   const [editPharmaAddress, setEditPharmaAddress] = useState('');
@@ -2828,6 +2943,8 @@ export default function App() {
   const [editPharmaEmail, setEditPharmaEmail] = useState('');
   const [editPharmaIsGuard, setEditPharmaIsGuard] = useState(false);
   const [editPharmaGuardDetails, setEditPharmaGuardDetails] = useState('');
+  const [editPharmaLat, setEditPharmaLat] = useState<number | undefined>(undefined);
+  const [editPharmaLng, setEditPharmaLng] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (editingPharmacy) {
@@ -2837,6 +2954,8 @@ export default function App() {
       setEditPharmaEmail(editingPharmacy.email);
       setEditPharmaIsGuard(editingPharmacy.isGuard);
       setEditPharmaGuardDetails(editingPharmacy.guardDetails || '');
+      setEditPharmaLat(editingPharmacy.latitude);
+      setEditPharmaLng(editingPharmacy.longitude);
     }
   }, [editingPharmacy]);
 
@@ -2859,7 +2978,9 @@ export default function App() {
         { id: 'm3', name: 'Ibuprofène UPSA 400mg', cip: '340093617320', category: 'Anti-inflammatoire', buyingPrice: 1.10, sellingPrice: 2.90, quantity: 20, minAlertQty: 5, expiryDate: '2026-06-15', location: 'Rayon A-3', requiresPrescription: false, unit: 'Boite', unitSymbol: 'b' }
       ],
       isGuard: newPharmaIsGuard,
-      guardDetails: newPharmaGuardDetails
+      guardDetails: newPharmaGuardDetails,
+      latitude: newPharmaLat,
+      longitude: newPharmaLng
     };
 
     setNetworkPharmacies(prev => [...prev, newPharma]);
@@ -2872,6 +2993,8 @@ export default function App() {
     setNewPharmaEmail('');
     setNewPharmaIsGuard(false);
     setNewPharmaGuardDetails('');
+    setNewPharmaLat(48.8675);
+    setNewPharmaLng(2.3638);
     playBeep();
   };
 
@@ -2888,7 +3011,9 @@ export default function App() {
           phone: editPharmaPhone,
           email: editPharmaEmail,
           isGuard: editPharmaIsGuard,
-          guardDetails: editPharmaGuardDetails
+          guardDetails: editPharmaGuardDetails,
+          latitude: editPharmaLat,
+          longitude: editPharmaLng
         };
       }
       return p;
@@ -3074,6 +3199,59 @@ export default function App() {
                   <label className="block font-bold text-slate-700">Précisions de garde / Calendrier</label>
                   <input type="text" value={newPharmaGuardDetails} onChange={e => setNewPharmaGuardDetails(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" placeholder="Ex: Du lundi au samedi de 20h à 8h" />
                 </div>
+
+                <div className="space-y-2 border border-slate-200/60 p-3 rounded-lg bg-slate-50">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-700">Coordonnées Géographiques</span>
+                    <button 
+                      type="button" 
+                      onClick={() => { playBeep(); setShowAddMap(!showAddMap); }} 
+                      className="text-emerald-600 hover:text-emerald-800 font-bold text-[10px] uppercase flex items-center gap-1 cursor-pointer"
+                    >
+                      {showAddMap ? '✕ Masquer la carte' : '🗺️ Ouvrir la carte'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 font-mono">
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-bold uppercase text-slate-500">Latitude</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={newPharmaLat !== undefined ? newPharmaLat : ''} 
+                        onChange={e => setNewPharmaLat(e.target.value ? parseFloat(e.target.value) : undefined)} 
+                        className="w-full bg-white border p-1 rounded font-semibold text-center text-xs" 
+                        placeholder="ex: 48.8675"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-bold uppercase text-slate-500">Longitude</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={newPharmaLng !== undefined ? newPharmaLng : ''} 
+                        onChange={e => setNewPharmaLng(e.target.value ? parseFloat(e.target.value) : undefined)} 
+                        className="w-full bg-white border p-1 rounded font-semibold text-center text-xs" 
+                        placeholder="ex: 2.3638"
+                      />
+                    </div>
+                  </div>
+                  {showAddMap && (
+                    <div className="pt-2 border-t mt-2">
+                      <InteractiveLeafletMap 
+                        mode="admin" 
+                        initialLat={newPharmaLat || 48.8675} 
+                        initialLng={newPharmaLng || 2.3638} 
+                        pharmacyName={newPharmaName || "Nouvelle Pharmacie"} 
+                        pharmacyAddress={newPharmaAddress}
+                        onLocationSelect={(lat, lng) => {
+                          setNewPharmaLat(lat);
+                          setNewPharmaLng(lng);
+                        }} 
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2 border-t flex gap-2 justify-end">
                   <button type="button" onClick={() => { playBeep(); setShowAddPharmacyModal(false); }} className="bg-slate-100 hover:bg-slate-200 font-bold px-4 py-2 rounded text-slate-700 cursor-pointer">Annuler</button>
                   <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded shadow-3xs cursor-pointer">Enregistrer</button>
@@ -3118,6 +3296,59 @@ export default function App() {
                   <label className="block font-bold text-slate-700">Précisions de garde / Calendrier</label>
                   <input type="text" value={editPharmaGuardDetails} onChange={e => setEditPharmaGuardDetails(e.target.value)} className="w-full bg-slate-50 border p-2.5 rounded focus:outline-emerald-600 font-semibold" />
                 </div>
+
+                <div className="space-y-2 border border-slate-200/60 p-3 rounded-lg bg-slate-50">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-700">Coordonnées Géographiques</span>
+                    <button 
+                      type="button" 
+                      onClick={() => { playBeep(); setShowEditMap(!showEditMap); }} 
+                      className="text-emerald-600 hover:text-emerald-800 font-bold text-[10px] uppercase flex items-center gap-1 cursor-pointer"
+                    >
+                      {showEditMap ? '✕ Masquer la carte' : '🗺️ Ouvrir la carte'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 font-mono">
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-bold uppercase text-slate-500">Latitude</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={editPharmaLat !== undefined ? editPharmaLat : ''} 
+                        onChange={e => setEditPharmaLat(e.target.value ? parseFloat(e.target.value) : undefined)} 
+                        className="w-full bg-white border p-1 rounded font-semibold text-center text-xs" 
+                        placeholder="ex: 48.8675"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-bold uppercase text-slate-500">Longitude</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={editPharmaLng !== undefined ? editPharmaLng : ''} 
+                        onChange={e => setEditPharmaLng(e.target.value ? parseFloat(e.target.value) : undefined)} 
+                        className="w-full bg-white border p-1 rounded font-semibold text-center text-xs" 
+                        placeholder="ex: 2.3638"
+                      />
+                    </div>
+                  </div>
+                  {showEditMap && (
+                    <div className="pt-2 border-t mt-2">
+                      <InteractiveLeafletMap 
+                        mode="admin" 
+                        initialLat={editPharmaLat || 48.8675} 
+                        initialLng={editPharmaLng || 2.3638} 
+                        pharmacyName={editPharmaName || "Pharmacie"} 
+                        pharmacyAddress={editPharmaAddress}
+                        onLocationSelect={(lat, lng) => {
+                          setEditPharmaLat(lat);
+                          setEditPharmaLng(lng);
+                        }} 
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2 border-t flex gap-2 justify-end">
                   <button type="button" onClick={() => { playBeep(); setShowEditPharmacyModal(false); setEditingPharmacy(null); }} className="bg-slate-100 hover:bg-slate-200 font-bold px-4 py-2 rounded text-slate-700 cursor-pointer">Annuler</button>
                   <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded shadow-3xs cursor-pointer">Enregistrer les modifications</button>
@@ -3242,6 +3473,33 @@ export default function App() {
                 S'authentifier
               </button>
             </form>
+
+            {/* Public Access Portal */}
+            <div className="bg-slate-900/40 border border-emerald-900/50 rounded-2xl p-5 space-y-3.5 text-center shadow-lg">
+              <div className="space-y-1">
+                <h4 className="text-xs font-extrabold text-emerald-400 uppercase tracking-wider">📢 Espace Public & Patients</h4>
+                <p className="text-[11px] text-slate-300 leading-snug">Accédez librement aux services d'urgence sans connexion requise :</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => navigateToPath('/pharmacie-garde')}
+                  className="flex flex-col items-center gap-1.5 p-3 bg-slate-950 hover:bg-slate-800 border border-emerald-950 hover:border-emerald-700/50 rounded-xl transition-all cursor-pointer text-center group active:scale-95"
+                >
+                  <span className="text-xl group-hover:animate-bounce">🏥</span>
+                  <span className="text-[10px] font-black text-slate-100 uppercase tracking-wider block text-slate-200">Pharmacies de Garde</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateToPath('/medicaments')}
+                  className="flex flex-col items-center gap-1.5 p-3 bg-slate-950 hover:bg-slate-800 border border-emerald-950 hover:border-emerald-700/50 rounded-xl transition-all cursor-pointer text-center group active:scale-95"
+                >
+                  <span className="text-xl group-hover:rotate-12 transition-transform">🔍</span>
+                  <span className="text-[10px] font-black text-slate-100 uppercase tracking-wider block text-slate-200">Stocks & Médicaments</span>
+                </button>
+              </div>
+            </div>
 
           </div>
         </div>
@@ -4171,6 +4429,20 @@ export default function App() {
                         onChange={(e) => setPharmacyInfo({ ...pharmacyInfo, ameliAgreement: e.target.value })} 
                         className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-medium" 
                         placeholder="Ex: Agrément CNAMPS Ameli N° 401552 - Télétransmission SESAM-Vitale directe."
+                      />
+                    </div>
+
+                    <div className="md:col-span-2 pt-4 border-t border-slate-900 space-y-3">
+                      <label className="block text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1.5">
+                        <span>📍</span> Position Géographique de l'Officine (Carte de Localisation)
+                      </label>
+                      <InteractiveLeafletMap 
+                        mode="admin" 
+                        initialLat={pharmacyInfo.latitude || 48.8675} 
+                        initialLng={pharmacyInfo.longitude || 2.3638} 
+                        pharmacyName={pharmacyInfo.pharmacyName || "PHARMACIE DE LA MAIRIE"} 
+                        pharmacyAddress={pharmacyInfo.address || "12 Place de la République, 75003 Paris"}
+                        onLocationSelect={(lat, lng) => setPharmacyInfo({ ...pharmacyInfo, latitude: lat, longitude: lng })} 
                       />
                     </div>
                   </div>
